@@ -1,0 +1,22 @@
+# Foundry build artifacts
+cache/
+out/
+
+# Dependencies
+lib/
+
+# Deployment artifacts
+broadcast/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Documentation
+docs/
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/
