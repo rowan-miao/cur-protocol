@@ -28,6 +28,7 @@ interface IveCURLock {
         bool isLocked
     );
     function getBonusByDuration(uint256 duration) external pure returns(uint256);
+    function setIncentiveGauge(address _incentiveGauge) external;
 
 
     event Locked(address indexed user, uint256 duration, uint256 bonusFactor, uint256 endTime);

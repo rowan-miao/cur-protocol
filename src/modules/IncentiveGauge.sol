@@ -469,15 +469,6 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
         _unpause();
     }
 
-     /**
-     * @notice Updates the RevenueRebatePool address
-     * @dev Only callable by owner
-     * @param _revenueRebatePool New RevenueRebatePool address
-     */
-    function setRevenueRebatePool(address _revenueRebatePool) public onlyOwner {
-        if(_revenueRebatePool == address(0)) revert ZeroAddress();
-        revenueRebatePool = IRevenueRebatePool(_revenueRebatePool);
-    }
-    
+   
 
 }

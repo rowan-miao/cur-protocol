@@ -107,15 +107,15 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
     constructor(address _curToken, address _sCURToken, address _gauge, address _veLock, address _revenueRebatePool) Ownable(msg.sender){
         if (_curToken == address(0)) revert ZeroAddress();
         if (_sCURToken == address(0)) revert ZeroAddress();
-        if (_gauge == address(0)) revert ZeroAddress();
-        if (_veLock == address(0)) revert ZeroAddress();
-        if (_revenueRebatePool == address(0)) revert ZeroAddress();
-        
+
         curToken = IERC20(_curToken);
         sCURToken = IsCUR(_sCURToken);
-        gauge = IIncentiveGauge(_gauge);
-        veLock = IveCURLock(_veLock);
-        revenueRebatePool = IRevenueRebatePool(_revenueRebatePool);
+
+        if (_gauge != address(0)) gauge = IIncentiveGauge(_gauge);
+
+        if (_veLock != address(0)) veLock = IveCURLock(_veLock);
+        
+        if (_revenueRebatePool != address(0)) revenueRebatePool = IRevenueRebatePool(_revenueRebatePool);
     }
     
     
@@ -324,7 +324,7 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
 
     /**
      * @notice Updates the IncentiveGauge contract address
-     * @dev Only callable by owner for protocol upgrades
+     * @dev Only callable by the owner to update the protocol dependency
      * @param _gauge New IncentiveGauge contract address
      */
     function setGauge(address _gauge) public onlyOwner {
@@ -334,12 +334,22 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
 
     /**
      * @notice Updates the veCURLock contract address
-     * @dev Only callable by owner for protocol upgrades
+     * @dev Only callable by the owner to update the protocol dependency
      * @param _veLock New veCURLock contract address
      */
     function setVeLock(address _veLock) public onlyOwner {
         if(_veLock == address(0)) revert ZeroAddress();
         veLock = IveCURLock(_veLock);
+    }
+    
+    /**
+     * @notice Updates the RevenueRebatePool contract address
+     * @dev Only callable by owner for protocol upgrades
+     * @param _revenueRebatePool New RevenueRebatePool contract address
+     */
+    function setRevenueRebatePool(address _revenueRebatePool) public onlyOwner {
+        if (_revenueRebatePool == address(0)) revert ZeroAddress();
+        revenueRebatePool = IRevenueRebatePool(_revenueRebatePool);
     }
 
 

@@ -719,78 +719,41 @@ contract veCURLockTest is Test {
     }
 
     // ============================================
-    // SetNFTChecker Tests
-    // ============================================
-    function test_SetNFTChecker_Success() public {
-        address newNFTChecker = address(0x123);
-
-        vm.prank(owner);
-        vm.expectEmit(true, false, false, true);
-        emit NFTCheckerUpdated(newNFTChecker);
-        veLock.setNFTChecker(newNFTChecker);
-
-        assertEq(address(veLock.nftChecker()), newNFTChecker);
-    }
-
-    function test_SetNFTChecker_RevertWhenZeroAddress() public {
-        vm.prank(owner);
-        vm.expectRevert(veCURLock.ZeroAddress.selector);
-        veLock.setNFTChecker(address(0));
-    }
-    function test_SetNFTChecker_RevertWhenNotOwner() public {
-        address newNFTChecker = address(0x123);
-        vm.prank(alice);
-        vm.expectRevert();
-        veLock.setNFTChecker(newNFTChecker);
-    }
-
-    function test_SetNFTChecker_Event() public {
-        address newNFTChecker = address(0x123);
-
-        vm.prank(owner);
-        vm.expectEmit(true, false, false, true);
-        emit NFTCheckerUpdated(newNFTChecker);
-        veLock.setNFTChecker(newNFTChecker);
-
-    }
-
-    // ============================================
     // SetIncentiveGauge Tests
     // ============================================
-
-    function test_SetIncentiveGauge_Success() public {
-        address newGauge = address(0x456);
+    function test_setIncentiveGauge_Success() public {
+        address newIncentiveGauge = address(0x123);
 
         vm.prank(owner);
         vm.expectEmit(true, false, false, true);
-        emit IncentiveGaugeUpdated(newGauge);
-        veLock.setIncentiveGauge(newGauge);
+        emit IncentiveGaugeUpdated(newIncentiveGauge);
+        veLock.setIncentiveGauge(newIncentiveGauge);
 
-        assertEq(address(veLock.incentiveGauge()), newGauge);
+        assertEq(address(veLock.incentiveGauge()), newIncentiveGauge);
     }
 
-    function test_SetIncentiveGauge_RevertWhenZeroAddress() public {
+    function test_setIncentiveGauge_RevertWhenZeroAddress() public {
         vm.prank(owner);
         vm.expectRevert(veCURLock.ZeroAddress.selector);
         veLock.setIncentiveGauge(address(0));
     }
-
-    function test_SetIncentiveGauge_RevertWhenNotOwner() public {
-        address newGauge = address(0x456);
+    function test_setIncentiveGauge_RevertWhenNotOwner() public {
+        address newIncentiveGauge = address(0x123);
         vm.prank(alice);
         vm.expectRevert();
-        veLock.setIncentiveGauge(newGauge);
+        veLock.setIncentiveGauge(newIncentiveGauge);
     }
 
-    function test_SetIncentiveGauge_Event() public {
-        address newGauge = address(0x456);
+    function test_setIncentiveGauge_Event() public {
+        address newIncentiveGauge = address(0x123);
 
         vm.prank(owner);
         vm.expectEmit(true, false, false, true);
-        emit IncentiveGaugeUpdated(newGauge);
-        veLock.setIncentiveGauge(newGauge);
+        emit IncentiveGaugeUpdated(newIncentiveGauge);
+        veLock.setIncentiveGauge(newIncentiveGauge);
 
     }
+
 
     
     // ============================================

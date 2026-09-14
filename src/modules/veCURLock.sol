@@ -154,12 +154,13 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
         if (_sCURToken == address(0)) revert ZeroAddress();
         if (_curStake == address(0)) revert ZeroAddress();
         if (_nftChecker == address(0)) revert ZeroAddress();
-        if (_incentiveGauge == address(0)) revert ZeroAddress();
+        
 
         sCURToken = IsCUR(_sCURToken);
         curStake = ICURStaking(_curStake);
         nftChecker = INFTChecker(_nftChecker);
-        incentiveGauge = IIncentiveGauge(_incentiveGauge);
+
+        if (_incentiveGauge == address(0)) incentiveGauge = IIncentiveGauge(_incentiveGauge);
 
         totalLocked = 0;
     }
@@ -325,8 +326,6 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
     }
 
    
-   
-
     // ============================================
     // NFT Binding Functions
     // ============================================
@@ -435,16 +434,6 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
     // ============================================
     // Admin Functions
     // ============================================
-    
-    /**
-     * @notice Updates NFTChecker contract address
-     * @param _nftChecker New NFTChecker address
-     */
-    function setNFTChecker(address _nftChecker) public onlyOwner {
-        if (_nftChecker == address(0)) revert ZeroAddress();
-        nftChecker = INFTChecker(_nftChecker);
-        emit NFTCheckerUpdated(_nftChecker);
-    }
 
     /**
      * @notice Updates IncentiveGauge contract address
@@ -456,7 +445,6 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
         emit IncentiveGaugeUpdated(_incentiveGauge);
     }
 
-   
 
 
     // ============================================

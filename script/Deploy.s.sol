@@ -82,6 +82,16 @@ contract DeployScript is Script {
         );
         console.log("IncentiveGauge:", address(gauge));
 
+        sCURToken.setIncentiveGauge(address(gauge));
+        console.log("sCUR dependencies set");
+
+        staking.setGauge(address(gauge));
+        staking.setVeLock(address(veLock));
+        staking.setRevenueRebatePool(address(revenue));
+        console.log("CURStaking dependencies set");
+
+        veLock.setIncentiveGauge(address(gauge));
+        console.log("veCURLock dependencies set");
 
         Airdrop airdrop = new Airdrop(address(curToken));
         console.log("Airdrop:", address(airdrop));
@@ -91,12 +101,6 @@ contract DeployScript is Script {
         VestingWallet teamVesting = new VestingWallet(team, start, uint64(1460 days));
         console.log("TeamVesting:", address(teamVesting));
 
-        staking.setGauge(address(gauge));
-        staking.setVeLock(address(veLock));
-        console.log("CURStaking dependencies updated");
-
-        gauge.setRevenueRebatePool(address(revenue));
-        console.log("IncentiveGauge revenue pool updated");
 
 
         curToken.transfer(address(gauge), STAKING_REWARD);
@@ -115,7 +119,6 @@ contract DeployScript is Script {
         console.log("Transferred 10M CUR to Treasury");
 
         require(curToken.balanceOf(owner) == 0, "CUR distribution failed");
-
         console.log("CUR distribution completed");
 
         curToken.transferOwnership(dao);

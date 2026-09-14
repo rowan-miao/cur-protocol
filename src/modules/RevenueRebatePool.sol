@@ -23,7 +23,7 @@ import "../interfaces/ICURStaking.sol";
 contract RevenueRebatePool is Pausable, Ownable, ReentrancyGuard {
     IERC20 public immutable curToken;
     IsCUR public immutable sCURToken;
-    address public curStaking;
+    ICURStaking public immutable curStaking;
 
     uint256 public totalRevenue;
     uint256 public threshold = 1000 * 1e18;
@@ -64,6 +64,7 @@ contract RevenueRebatePool is Pausable, Ownable, ReentrancyGuard {
      * @notice Initializes the RevenueRebatePool contract
      * @param _curToken Address of the CUR token
      * @param _sCURToken Address of the sCUR token
+     * @param _curStaking Address of the CURStaking contract 
      */
     constructor(address _curToken, address _sCURToken, address _curStaking) Ownable(msg.sender){
         if(_curToken == address(0)) revert ZeroAddress();
@@ -72,7 +73,7 @@ contract RevenueRebatePool is Pausable, Ownable, ReentrancyGuard {
 
         curToken = IERC20(_curToken);
         sCURToken = IsCUR(_sCURToken);
-        curStaking = _curStaking;
+        curStaking = ICURStaking(_curStaking);
 
         totalRevenue = 0;
     }
@@ -114,7 +115,7 @@ contract RevenueRebatePool is Pausable, Ownable, ReentrancyGuard {
         uint256 balance = curToken.balanceOf(address(this));
         if(amount > balance) revert InsufficientBalance();
         
-        curToken.transfer(curStaking, amount);
+        curToken.transfer(address(curStaking), amount);
         //更新汇率
         sCURToken.updateExchangeRate(amount);
 
@@ -175,7 +176,7 @@ contract RevenueRebatePool is Pausable, Ownable, ReentrancyGuard {
     } 
 
     // ============================================
-    // Admin Functions
+    // Pause Functions
     // ============================================
     
     /**

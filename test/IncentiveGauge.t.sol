@@ -951,31 +951,6 @@ contract IncentiveGaugeTest is Test {
         assertEq(afterReward, beforeReward);
     }
 
-    // ============================================
-    // SetRevenueRebatePool Tests
-    // ============================================
-    function test_SetRevenueRebatePool_Success() public {
-        address newPool = makeAddr("newPool");
-        
-        vm.prank(owner);
-        gauge.setRevenueRebatePool(newPool);
-        
-        assertEq(address(gauge.revenueRebatePool()), newPool);
-
-    }
-    function test_RevertWhen_SetRevenueRebatePool_ZeroAddress() public {
-        vm.prank(owner);
-        vm.expectRevert(IncentiveGauge.ZeroAddress.selector);
-        gauge.setRevenueRebatePool(address(0));
-    }
-    
-    function test_RevertWhen_SetRevenueRebatePool_NotOwner() public {
-        address newPool = makeAddr("newPool");
-        
-        vm.prank(alice);
-        vm.expectRevert();
-        gauge.setRevenueRebatePool(newPool);
-    }
     
 
     // ============================================

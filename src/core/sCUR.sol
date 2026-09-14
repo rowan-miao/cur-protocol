@@ -18,8 +18,8 @@ import "../interfaces/IIncentiveGauge.sol";
  * @dev sCUR value increases over time as protocol revenue is injected into the system.
  * @dev 1 sCUR = exchangeRate / 1e18 CUR (exchangeRate only increases)
  * @dev Only authorized addresses (CURStaking, RevenueRebatePool) can call restricted functions
- * @dev - CURStaking can call: mint() and redeem()
- * @dev - RevenueRebatePool can call: updateExchangeRate()
+ * @dev CURStaking can call: mint() and redeem()
+ * @dev RevenueRebatePool can call: updateExchangeRate()
  */
 contract sCUR is ERC20, ERC20Burnable, Pausable, Ownable, ReentrancyGuard{
     // ============================================

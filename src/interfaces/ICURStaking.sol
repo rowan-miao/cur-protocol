@@ -19,6 +19,7 @@ interface ICURStaking {
     function withdrawPenalty(uint256 CURAmount) external;
     function setGauge(address _gauge) external;
     function setVeLock(address _veLock) external;
+    function setRevenueRebatePool(address _revenueRebatePool) external;
     
     event Staked(address indexed user, uint256 CURAmount, uint256 sCURAmount);
     event UnStaked(address indexed user, uint256 sCURAmount, uint256 CURAmount);
