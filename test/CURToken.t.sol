@@ -6,7 +6,7 @@ import "../src/core/CURToken.sol";
 
 contract CURTokenTest is Test {
     CURToken public token;
-    
+
     address public owner = makeAddr("owner");
     address public alice = makeAddr("alice");
     address public bob = makeAddr("bob");
@@ -33,13 +33,12 @@ contract CURTokenTest is Test {
         assertEq(token.balanceOf(owner), TOTAL_SUPPLY);
         assertEq(token.owner(), owner);
     }
-    
 
     // ============================================
     // Constructor Tests
     // ============================================
-    
-    function test_Constructor() public view{
+
+    function test_Constructor() public view {
         assertEq(token.name(), "CURToken");
         assertEq(token.symbol(), "CUR");
         assertEq(token.decimals(), 18);
@@ -51,7 +50,7 @@ contract CURTokenTest is Test {
     // ============================================
     // Transfer Tests
     // ============================================
-    function test_Transfer() public  {
+    function test_Transfer() public {
         uint256 amount = 1000 * 10 ** 18;
 
         vm.prank(owner);
@@ -60,44 +59,39 @@ contract CURTokenTest is Test {
         assertEq(token.balanceOf(owner), TOTAL_SUPPLY - amount);
         assertEq(token.balanceOf(alice), amount);
     }
-  
-    function test_Transfer_InsufficientBalance() public  {
+
+    function test_Transfer_InsufficientBalance() public {
         uint256 amount = TOTAL_SUPPLY + 1;
 
         vm.prank(owner);
         vm.expectRevert();
         token.transfer(alice, amount);
-
     }
 
-    function test_Transfer_ZeroAddress() public  {
+    function test_Transfer_ZeroAddress() public {
         uint256 amount = 6000 * 10 ** 18;
 
         vm.prank(owner);
         vm.expectRevert();
         token.transfer(address(0), amount);
-
     }
 
     function test_Transfer_ZeroAmount() public {
         vm.prank(owner);
         token.transfer(alice, 0);
-    
+
         assertEq(token.balanceOf(owner), TOTAL_SUPPLY);
         assertEq(token.balanceOf(alice), 0);
     }
 
-
-    function test_Transfer_Event() public  {
+    function test_Transfer_Event() public {
         uint256 amount = 1000 * 10 ** 18;
 
         vm.prank(owner);
         vm.expectEmit(true, true, false, true);
         emit Transfer(owner, alice, amount);
         token.transfer(alice, amount);
-        
     }
-
 
     // ============================================
     // Approve Tests
@@ -114,13 +108,11 @@ contract CURTokenTest is Test {
     function test_Approve_Event() public {
         uint256 amount = 5000 * 10 ** 18;
 
-       
         vm.expectEmit(true, true, false, true);
         emit Approval(alice, bob, amount);
-        
+
         vm.prank(alice);
         token.approve(bob, amount);
-       
     }
 
     function test_Approve_ZeroAmount() public {
@@ -142,14 +134,13 @@ contract CURTokenTest is Test {
 
         vm.prank(alice);
         token.approve(bob, amount);
-       
+
         vm.prank(bob);
         token.transferFrom(alice, charlie, amount);
 
         assertEq(token.balanceOf(alice), 3000 * 10 ** 18);
         assertEq(token.balanceOf(charlie), amount);
         assertEq(token.allowance(alice, bob), 0);
-
     }
 
     function test_TransferFrom_InsufficientAllowance() public {
@@ -157,11 +148,9 @@ contract CURTokenTest is Test {
         vm.prank(owner);
         token.transfer(alice, 4000 * 10 ** 18);
 
-       
         vm.prank(bob);
         vm.expectRevert();
         token.transferFrom(alice, charlie, amount);
-
     }
 
     function test_TransferFrom_InsufficientBalance() public {
@@ -198,10 +187,9 @@ contract CURTokenTest is Test {
 
         vm.prank(owner);
         token.burn(amount);
-        
+
         assertEq(token.balanceOf(owner), TOTAL_SUPPLY - amount);
         assertEq(token.totalSupply(), TOTAL_SUPPLY - amount);
-
     }
 
     function test_Burn_InsufficientBalance() public {
@@ -210,7 +198,6 @@ contract CURTokenTest is Test {
         vm.prank(owner);
         vm.expectRevert();
         token.burn(amount);
-
     }
 
     function test_BurnFrom() public {
@@ -254,7 +241,6 @@ contract CURTokenTest is Test {
         token.burnFrom(alice, amount);
     }
 
-
     // ============================================
     // Mint Tests
     // ============================================
@@ -264,7 +250,6 @@ contract CURTokenTest is Test {
 
         vm.expectRevert();
         token.mint(bob, amount);
-        
     }
 
     function test_Mint_ZeroAddress() public {
@@ -272,17 +257,15 @@ contract CURTokenTest is Test {
         vm.prank(owner);
         vm.expectRevert(CURToken.ZeroAddress.selector);
         token.mint(address(0), amount);
-
     }
 
     function test_Mint_ZeroAmount() public {
         vm.prank(owner);
         vm.expectRevert(CURToken.InvalidAmount.selector);
         token.mint(alice, 0);
-
     }
 
-     function test_Mint_ExceedsTotalSupply() public {
+    function test_Mint_ExceedsTotalSupply() public {
         uint256 remaining = TOTAL_SUPPLY - token.totalSupply();
         uint256 mintAmount = remaining + 1;
 
@@ -299,8 +282,7 @@ contract CURTokenTest is Test {
         token.pause();
 
         assertTrue(token.paused());
-
-    } 
+    }
 
     function test_Unpause() public {
         vm.prank(owner);
@@ -310,7 +292,6 @@ contract CURTokenTest is Test {
         token.unpause();
 
         assertFalse(token.paused());
- 
     }
 
     function test_Transfer_WhenPaused() public {
@@ -320,7 +301,6 @@ contract CURTokenTest is Test {
         vm.prank(owner);
         vm.expectRevert();
         token.transfer(alice, 1000 * 10 ** 18);
-
     }
 
     function test_Mint_WhenPaused() public {
@@ -330,7 +310,6 @@ contract CURTokenTest is Test {
         vm.prank(owner);
         vm.expectRevert();
         token.mint(alice, 1000 * 10 ** 18);
-
     }
 
     function test_Burn_WhenPaused() public {
@@ -340,7 +319,6 @@ contract CURTokenTest is Test {
         vm.prank(owner);
         vm.expectRevert();
         token.burn(1000 * 10 ** 18);
-
     }
 
     function test_Pause_Event() public {
@@ -349,19 +327,17 @@ contract CURTokenTest is Test {
 
         vm.prank(owner);
         token.pause();
-        
     }
 
-     function test_Unpause_Event() public {
+    function test_Unpause_Event() public {
         vm.prank(owner);
         token.pause();
-        
+
         vm.expectEmit(true, false, false, true);
         emit Unpaused(owner);
 
         vm.prank(owner);
         token.unpause();
-        
     }
 
     function test_Pause_NotOwner() public {
@@ -373,7 +349,7 @@ contract CURTokenTest is Test {
     function test_Unpause_NotOwner() public {
         vm.prank(owner);
         token.pause();
-    
+
         vm.prank(alice);
         vm.expectRevert();
         token.unpause();
@@ -385,13 +361,13 @@ contract CURTokenTest is Test {
     function test_TransferOwnership() public {
         vm.prank(owner);
         token.transferOwnership(alice);
-    
+
         assertEq(token.owner(), alice);
     }
 
     function test_TransferOwnership_NotOwner() public {
         vm.prank(alice);
-        
+
         vm.expectRevert();
         token.transferOwnership(bob);
     }
@@ -399,12 +375,10 @@ contract CURTokenTest is Test {
     function test_TransferOwnership_ZeroAddress() public {
         vm.prank(owner);
 
-        vm.expectRevert(); 
+        vm.expectRevert();
         token.transferOwnership(address(0));
-
     }
 
-    
     // ============================================
     // Edge Cases Tests
     // ============================================
@@ -428,7 +402,6 @@ contract CURTokenTest is Test {
         assertEq(token.allowance(alice, bob), maxAmount);
     }
 
-
     // ============================================
     // Fuzz Tests
     // ============================================
@@ -438,12 +411,10 @@ contract CURTokenTest is Test {
 
         vm.prank(owner);
         token.burn(amount);
-        
+
         assertEq(token.balanceOf(owner), TOTAL_SUPPLY - amount);
         assertEq(token.totalSupply(), TOTAL_SUPPLY - amount);
-
     }
-   
 
     function test_Fuzz_Transfer(uint256 amount) public {
         amount = bound(amount, 1, TOTAL_SUPPLY);
@@ -452,20 +423,18 @@ contract CURTokenTest is Test {
 
         assertEq(token.balanceOf(alice), amount);
         assertEq(token.balanceOf(owner), TOTAL_SUPPLY - amount);
-
     }
 
-    function test_Fuzz_Approve(uint256 amount) public{
+    function test_Fuzz_Approve(uint256 amount) public {
         amount = bound(amount, 1, TOTAL_SUPPLY);
 
         vm.prank(alice);
         token.approve(bob, amount);
 
         assertEq(token.allowance(alice, bob), amount);
-
     }
 
-    function test_Fuzz_transferFrom(uint256 amount, uint256 aliceBalance) public{
+    function test_Fuzz_transferFrom(uint256 amount, uint256 aliceBalance) public {
         aliceBalance = bound(aliceBalance, 1, TOTAL_SUPPLY);
         amount = bound(amount, 1, aliceBalance);
 
@@ -483,7 +452,5 @@ contract CURTokenTest is Test {
         assertEq(token.balanceOf(alice), aliceBalance - amount);
         assertEq(token.allowance(alice, bob), 0);
     }
-
 }
 
-   

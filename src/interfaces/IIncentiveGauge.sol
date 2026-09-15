@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
- 
+
 /**
  * @title IIncentiveGauge
  * @dev Interface for IncentiveGauge;
@@ -14,7 +14,6 @@ interface IIncentiveGauge {
     event EarlyUnlockExecuted(address indexed user, uint256 penalty, uint256 removeWeight);
     event EmergencyWithdrawn(address indexed user, uint256 amount);
     event RewardsCleared(address indexed user, uint256 amount);
-    
 
     function deposit(address user, uint256 amount) external;
     function withdraw(address user, uint256 amount) external;
@@ -27,5 +26,4 @@ interface IIncentiveGauge {
     function getPendingReward(address user) external view returns (uint256);
     function getRemainingRewards() external view returns (uint256);
     function getCurrentEmissionRate() external view returns (uint256);
-
 }

@@ -10,7 +10,7 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
  * @author CUR Protocol Team
  * @notice Community airdrop contract for early supporters
  * @dev Manages whitelist and distributes CUR tokens to eligible users
- * 
+ *
  * Features:
  * - Whitelist management (add/remove users)
  * - Batch whitelist addition
@@ -27,12 +27,12 @@ contract Airdrop is Ownable, Pausable {
     uint256 public totalRecipients;
 
     mapping(address => bool) public hasClaimed;
-    mapping(address => bool) public isWhitelisted; 
+    mapping(address => bool) public isWhitelisted;
 
     // ============================================
     // Events
     // ============================================
-    
+
     /// @notice Emitted when a user successfully claims their airdrop
     event Claimed(address indexed user, uint256 amount);
     /// @notice Emitted when multiple users are added to whitelist
@@ -47,7 +47,7 @@ contract Airdrop is Ownable, Pausable {
     // ============================================
     // Errors
     // ============================================
-    
+
     /// @notice Thrown when zero address is provided
     error ZeroAddress();
     /// @notice Thrown when caller is not whitelisted
@@ -66,7 +66,7 @@ contract Airdrop is Ownable, Pausable {
     // ============================================
     // Constructor
     // ============================================
-    
+
     /**
      * @notice Initializes the Airdrop contract
      * @dev Sets the CUR token address
@@ -80,32 +80,31 @@ contract Airdrop is Ownable, Pausable {
     // ============================================
     // Whitelist Management
     // ============================================
-    
+
     /**
      * @notice Adds a single user to the whitelist
      * @dev Only callable by contract owner
      * @param user Address to add to whitelist
      */
-    function addToWhitelist(address user) public onlyOwner{
-        if(user == address(0)) revert ZeroAddress();
-        if(isWhitelisted[user]) revert AlreadyWhitelisted();
+    function addToWhitelist(address user) public onlyOwner {
+        if (user == address(0)) revert ZeroAddress();
+        if (isWhitelisted[user]) revert AlreadyWhitelisted();
         isWhitelisted[user] = true;
 
-        emit AddToWhitelist(user); 
+        emit AddToWhitelist(user);
     }
-    
+
     /**
      * @notice Adds multiple users to the whitelist
      * @dev Only callable by contract owner. Gas efficient for large batches.
      * @param users Array of addresses to add to whitelist
      */
-    function addWhitelist(address[] calldata users) public onlyOwner{
-        if(users.length == 0) revert EmptyArray();
-        for(uint256 i = 0; i < users.length; i++){
-            if(users[i] != address(0)){
+    function addWhitelist(address[] calldata users) public onlyOwner {
+        if (users.length == 0) revert EmptyArray();
+        for (uint256 i = 0; i < users.length; i++) {
+            if (users[i] != address(0)) {
                 isWhitelisted[users[i]] = true;
             }
-            
         }
 
         emit AddWhitelist(users);
@@ -116,29 +115,27 @@ contract Airdrop is Ownable, Pausable {
      * @dev Only callable by contract owner
      * @param user Address to remove from whitelist
      */
-    function removeFromWhitelist(address user) public onlyOwner{
-        if(!isWhitelisted[user]) revert NotWhitelisted();
+    function removeFromWhitelist(address user) public onlyOwner {
+        if (!isWhitelisted[user]) revert NotWhitelisted();
         isWhitelisted[user] = false;
 
         emit RemoveFromWhitelist(user);
-
-
     }
 
     // ============================================
     // Claim Functions
     // ============================================
-    
+
     /**
      * @notice Claims the airdrop for the caller
      * @dev User must be whitelisted and not have claimed before
      */
     function claim() public whenNotPaused {
-        if(!isWhitelisted[msg.sender]) revert NotWhitelisted();
-        if(hasClaimed[msg.sender]) revert AlreadyClaimed();
+        if (!isWhitelisted[msg.sender]) revert NotWhitelisted();
+        if (hasClaimed[msg.sender]) revert AlreadyClaimed();
 
         uint256 balance = curToken.balanceOf(address(this));
-        if(balance < AIRDROP_AMOUNT) revert InsufficientBalance();
+        if (balance < AIRDROP_AMOUNT) revert InsufficientBalance();
 
         hasClaimed[msg.sender] = true;
         totalClaimed += AIRDROP_AMOUNT;
@@ -147,21 +144,19 @@ contract Airdrop is Ownable, Pausable {
         curToken.transfer(msg.sender, AIRDROP_AMOUNT);
 
         emit Claimed(msg.sender, AIRDROP_AMOUNT);
-
-
     }
-    
+
     // ============================================
     // Deposit Functions
     // ============================================
-    
+
     /**
      * @notice Deposits CUR tokens into the contract for distribution
      * @dev Only callable by contract owner
      * @param amount Amount of CUR to deposit
      */
-    function deposit(uint256 amount) public onlyOwner{
-        if(amount == 0) revert ZeroAmount();
+    function deposit(uint256 amount) public onlyOwner {
+        if (amount == 0) revert ZeroAmount();
         curToken.transferFrom(msg.sender, address(this), amount);
         emit Deposited(amount);
     }
@@ -169,29 +164,27 @@ contract Airdrop is Ownable, Pausable {
     // ============================================
     // View Functions
     // ============================================
-    
+
     /**
      * @notice Gets the remaining CUR balance in the contract
      * @return Remaining CUR amount
      */
-    function getRemainingTokens() public view returns(uint256){
+    function getRemainingTokens() public view returns (uint256) {
         return curToken.balanceOf(address(this));
-        
     }
 
     /**
      * @notice Gets the total amount of CUR claimed so far
      * @return Total claimed amount
      */
-    function getTotalClaimed() public view returns(uint256){
+    function getTotalClaimed() public view returns (uint256) {
         return totalClaimed;
     }
-    
-    
+
     // ============================================
     // Pause Functions
     // ============================================
-    
+
     /**
      * @notice Pauses the claim functionality
      * @dev Only callable by contract owner
@@ -207,6 +200,4 @@ contract Airdrop is Ownable, Pausable {
     function unpause() public onlyOwner {
         _unpause();
     }
-
-
 }

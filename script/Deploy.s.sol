@@ -12,7 +12,6 @@ import "../src/modules/RevenueRebatePool.sol";
 import "../src/modules/Airdrop.sol";
 import "@openzeppelin/contracts/finance/VestingWallet.sol";
 
-
 contract DeployScript is Script {
     uint256 constant PRECISION = 1e18;
 
@@ -26,7 +25,7 @@ contract DeployScript is Script {
 
     uint256 constant TREASURY = 10_000_000 * PRECISION;
 
-    function run() public{
+    function run() public {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address owner = vm.addr(deployerPrivateKey);
 
@@ -46,39 +45,20 @@ contract DeployScript is Script {
         NFTChecker nftchecker = new NFTChecker();
         console.log("NFTChecker:", address(nftchecker));
 
-        CURStaking staking = new CURStaking(
-            address(curToken),
-            address(sCURToken),
-            address(0),
-            address(0),
-            address(0)
-        );
+        CURStaking staking = new CURStaking(address(curToken), address(sCURToken), address(0), address(0), address(0));
         console.log("CURStaking:", address(staking));
-         
+
         sCURToken.addMinter(address(staking));
         console.log("CURStaking added as minter for sCUR");
 
-        veCURLock veLock = new veCURLock(
-            address(sCURToken),
-            address(staking),
-            address(nftchecker),
-            address(0)
-        );
+        veCURLock veLock = new veCURLock(address(sCURToken), address(staking), address(nftchecker), address(0));
         console.log("veCURLock:", address(veLock));
 
-        RevenueRebatePool revenue = new RevenueRebatePool(
-            address(curToken),
-            address(sCURToken),
-            address(staking)
-        );
+        RevenueRebatePool revenue = new RevenueRebatePool(address(curToken), address(sCURToken), address(staking));
         console.log("RevenueRebatePool:", address(revenue));
 
         IncentiveGauge gauge = new IncentiveGauge(
-            address(curToken),
-            address(sCURToken),
-            address(staking),
-            address(veLock),
-            address(revenue)
+            address(curToken), address(sCURToken), address(staking), address(veLock), address(revenue)
         );
         console.log("IncentiveGauge:", address(gauge));
 
@@ -97,11 +77,9 @@ contract DeployScript is Script {
         console.log("Airdrop:", address(airdrop));
 
         uint64 start = uint64(block.timestamp + 180 days);
-       
+
         VestingWallet teamVesting = new VestingWallet(team, start, uint64(1460 days));
         console.log("TeamVesting:", address(teamVesting));
-
-
 
         curToken.transfer(address(gauge), STAKING_REWARD);
         console.log("Transferred 40M CUR to IncentiveGauge");
@@ -125,7 +103,5 @@ contract DeployScript is Script {
         console.log("CUR ownership transferred to DAO");
 
         vm.stopBroadcast();
-
     }
-
 }

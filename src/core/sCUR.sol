@@ -9,7 +9,6 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "../interfaces/IIncentiveGauge.sol";
 
-
 /**
  * @title sCUR - Staked CUR Token
  * @notice Share token representing a user's staked position in the CUR protocol
@@ -21,7 +20,7 @@ import "../interfaces/IIncentiveGauge.sol";
  * @dev CURStaking can call: mint() and redeem()
  * @dev RevenueRebatePool can call: updateExchangeRate()
  */
-contract sCUR is ERC20, ERC20Burnable, Pausable, Ownable, ReentrancyGuard{
+contract sCUR is ERC20, ERC20Burnable, Pausable, Ownable, ReentrancyGuard {
     // ============================================
     // Immutable State
     // ============================================
@@ -33,11 +32,11 @@ contract sCUR is ERC20, ERC20Burnable, Pausable, Ownable, ReentrancyGuard{
     // ============================================
     uint256 public constant INITIAL_EXCHANGE_RATE = 1e18;
     uint256 public constant PRECISION = 1e18;
-    
+
     // ============================================
     // State Variables
     // ============================================
-    uint256 public currentExchangeRate; 
+    uint256 public currentExchangeRate;
     uint256 public totalUnderlying;
     mapping(address => bool) public minters;
 
@@ -45,13 +44,12 @@ contract sCUR is ERC20, ERC20Burnable, Pausable, Ownable, ReentrancyGuard{
     // Events
     // ============================================
 
-    
     /// @notice Emitted when sCUR is minted
     event Mint(address indexed to, uint256 CURAmount, uint256 sCURAmount);
 
     /// @notice Emitted when sCUR is redeemed
     event Redeem(address indexed from, uint256 CURAmount, uint256 sCURAmount);
-    
+
     /// @notice Emitted when exchange rate is updated
     event UpdateExchangeRate(uint256 oldRate, uint256 newRate);
 
@@ -83,8 +81,6 @@ contract sCUR is ERC20, ERC20Burnable, Pausable, Ownable, ReentrancyGuard{
     /// @notice Thrown when exchange rate would decrease
     error ExchangeRateCannotDecrease();
 
-
-    
     // ============================================
     // Constructor
     // ============================================
@@ -96,16 +92,16 @@ contract sCUR is ERC20, ERC20Burnable, Pausable, Ownable, ReentrancyGuard{
      * @param _curToken Address of the underlying CUR token
      */
     constructor(address _curToken) ERC20("Staked CUR", "sCUR") Ownable(msg.sender) {
-        if(_curToken == address(0)) revert ZeroAddress();
+        if (_curToken == address(0)) revert ZeroAddress();
         CURToken = IERC20(_curToken);
 
-        currentExchangeRate = INITIAL_EXCHANGE_RATE; 
+        currentExchangeRate = INITIAL_EXCHANGE_RATE;
     }
 
     // ============================================
     // Modifiers
     // ============================================
-    
+
     /**
      * @notice Restricts function execution to authorized minters
      * @dev Only addresses added via addMinter() can call functions with this modifier
@@ -134,13 +130,12 @@ contract sCUR is ERC20, ERC20Burnable, Pausable, Ownable, ReentrancyGuard{
      * @notice Removes an authorized minter
      * @dev Only callable by contract owner
      * @param minter Address to remove from minters
-    */
+     */
     function removeMinter(address minter) external onlyOwner {
         if (!minters[minter]) revert Unauthorized();
         delete minters[minter];
         emit MinterRemoved(minter);
     }
-
 
     // ============================================
     // Core Functions
@@ -154,17 +149,23 @@ contract sCUR is ERC20, ERC20Burnable, Pausable, Ownable, ReentrancyGuard{
      * @param CURAmount Amount of CUR deposited and represented by the newly minted sCUR
      * @return sCURAmount Amount of sCUR minted
      */
-    function mint(address to, uint256 CURAmount) public onlyMinter whenNotPaused nonReentrant returns(uint256 sCURAmount) {
+    function mint(address to, uint256 CURAmount)
+        public
+        onlyMinter
+        whenNotPaused
+        nonReentrant
+        returns (uint256 sCURAmount)
+    {
         ///判断to是否是空地址
         ///判断 CURAmount 是否为零
         ///计算当前汇率 变更sCURAmount的数值
         ///铸造
         ///发送事件
-        if(to == address(0)) revert ZeroAddress();
-        if(CURAmount == 0) revert ZeroAmount();
-         
+        if (to == address(0)) revert ZeroAddress();
+        if (CURAmount == 0) revert ZeroAmount();
+
         sCURAmount = (CURAmount * PRECISION) / currentExchangeRate;
-        if(sCURAmount == 0) revert ZeroAmount();
+        if (sCURAmount == 0) revert ZeroAmount();
         totalUnderlying += CURAmount;
 
         _mint(to, sCURAmount);
@@ -181,10 +182,10 @@ contract sCUR is ERC20, ERC20Burnable, Pausable, Ownable, ReentrancyGuard{
      * @param sCURAmount Amount of sCUR to redeem
      * @return CURAmount Amount of CUR returned
      */
-    function redeem(address from, uint256 sCURAmount) public onlyMinter whenNotPaused nonReentrant returns(uint256) {
+    function redeem(address from, uint256 sCURAmount) public onlyMinter whenNotPaused nonReentrant returns (uint256) {
         return _redeem(from, sCURAmount);
     }
-     
+
     /**
      * @notice Internal logic for redeeming sCUR
      * @dev Burns sCUR and returns equivalent CUR
@@ -192,30 +193,29 @@ contract sCUR is ERC20, ERC20Burnable, Pausable, Ownable, ReentrancyGuard{
      * @param sCURAmount Amount of sCUR to redeem
      * @return CURAmount Amount of CUR returned
      */
-    function _redeem(address from, uint256 sCURAmount) internal returns(uint256 CURAmount) {
+    function _redeem(address from, uint256 sCURAmount) internal returns (uint256 CURAmount) {
         ///判断to是否为空地址
         ///判断sCURAmount是否为零
         ///判断用户是否有足够的 sCUR 余额
         ///计算当前汇率
         ///销毁
         ///发送赎回事件
-        if(from == address(0)) revert ZeroAddress();
-        if(sCURAmount == 0) revert ZeroAmount();
+        if (from == address(0)) revert ZeroAddress();
+        if (sCURAmount == 0) revert ZeroAmount();
 
         uint256 balance = balanceOf(from);
-        if(balance < sCURAmount) revert InsufficientSCURBalance();
-        
+        if (balance < sCURAmount) revert InsufficientSCURBalance();
+
         CURAmount = sCURAmount * currentExchangeRate / PRECISION;
 
         totalUnderlying -= CURAmount;
 
         _burn(from, sCURAmount);
-        
-        emit Redeem(from, CURAmount, sCURAmount); 
-        return CURAmount;
 
+        emit Redeem(from, CURAmount, sCURAmount);
+        return CURAmount;
     }
-    
+
     /**
      * @notice Burns sCUR from gauge for penalty fees
      * @dev Only callable by IncentiveGauge
@@ -223,9 +223,9 @@ contract sCUR is ERC20, ERC20Burnable, Pausable, Ownable, ReentrancyGuard{
      * @param sCURAmount Amount of sCUR to burn as a penalty
      * @return curAmount Equivalent CUR amount represented by the burned sCUR
      */
-    function burnGauge(uint256 sCURAmount) external whenNotPaused returns (uint256 curAmount){
-        if(msg.sender != address(incentiveGauge)) revert Unauthorized();
-        if(sCURAmount == 0) revert ZeroAmount();
+    function burnGauge(uint256 sCURAmount) external whenNotPaused returns (uint256 curAmount) {
+        if (msg.sender != address(incentiveGauge)) revert Unauthorized();
+        if (sCURAmount == 0) revert ZeroAmount();
 
         curAmount = (sCURAmount * currentExchangeRate) / PRECISION;
         _burn(msg.sender, sCURAmount);
@@ -241,26 +241,26 @@ contract sCUR is ERC20, ERC20Burnable, Pausable, Ownable, ReentrancyGuard{
      * @param additionalCUR Amount of CUR added to the pool
      * @return newRate The updated exchange rate
      */
-    function updateExchangeRate(uint256 additionalCUR) public onlyMinter returns(uint256 newRate) {
+    function updateExchangeRate(uint256 additionalCUR) public onlyMinter returns (uint256 newRate) {
         ///判断additionalCUR是否大于0
         ///将additionalCUR加到底层资产中
         ///判断当前底层CUR是否为0
         ///判断当前兑换率是否小于新的兑换率
         ///更新底层兑换率
         ///发送事件
-        if(additionalCUR == 0) revert ZeroAmount();
+        if (additionalCUR == 0) revert ZeroAmount();
         uint256 oldRate = currentExchangeRate;
 
         totalUnderlying += additionalCUR;
         uint256 currentTotalSupply = totalSupply();
 
-        if(currentTotalSupply > 0){
+        if (currentTotalSupply > 0) {
             newRate = totalUnderlying * PRECISION / currentTotalSupply;
-        }else{
+        } else {
             newRate = oldRate;
         }
 
-        if(newRate < oldRate) revert ExchangeRateCannotDecrease();
+        if (newRate < oldRate) revert ExchangeRateCannotDecrease();
 
         currentExchangeRate = newRate;
 
@@ -275,19 +275,19 @@ contract sCUR is ERC20, ERC20Burnable, Pausable, Ownable, ReentrancyGuard{
      * @param sCURAmount Amount of sCUR to redeem
      * @return CURAmount Amount of CUR returned
      */
-    function emergencyRedeem(address from, uint256 sCURAmount) public onlyMinter returns(uint256) {
+    function emergencyRedeem(address from, uint256 sCURAmount) public onlyMinter returns (uint256) {
         return _redeem(from, sCURAmount);
     }
 
     // ============================================
     // View Functions
     // ============================================
-    
+
     /**
      * @notice Get the current exchange rate
      * @return Current exchange rate (1 sCUR = rate / 1e18 CUR)
      */
-    function getExchangeRate() public view returns(uint256){
+    function getExchangeRate() public view returns (uint256) {
         return currentExchangeRate;
     }
 
@@ -306,7 +306,7 @@ contract sCUR is ERC20, ERC20Burnable, Pausable, Ownable, ReentrancyGuard{
     // ============================================
     // Pause Functions
     // ============================================
-    
+
     /**
      * @notice Pause the contract (emergency stop)
      * @dev Only callable by contract owner
@@ -323,7 +323,4 @@ contract sCUR is ERC20, ERC20Burnable, Pausable, Ownable, ReentrancyGuard{
     function unpause() public onlyOwner {
         _unpause();
     }
-
-
-
 }

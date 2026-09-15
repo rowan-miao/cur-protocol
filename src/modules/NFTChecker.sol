@@ -10,7 +10,7 @@ import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
  * @author CUR Protocol Team
  * @notice NFT permission validator for lock duration tiers
  * @dev Manages NFT whitelist and validates user NFT holdings for lock permissions
- * 
+ *
  * Features:
  * - Whitelist management for NFT contracts (owner only)
  * - NFT binding/unbinding to prevent reuse
@@ -21,7 +21,7 @@ contract NFTChecker is Pausable, Ownable {
     // ============================================
     // Constants
     // ============================================
-    
+
     uint8 public constant TIER_NONE = 0;
     uint8 public constant TIER_MID = 1;
     uint8 public constant TIER_HIGH = 2;
@@ -29,19 +29,19 @@ contract NFTChecker is Pausable, Ownable {
     // ============================================
     // Structs
     // ============================================
-    
+
     /**
      * @title UserBinding
      * @notice User NFT binding information
      */
-    struct UserBinding{
+    struct UserBinding {
         address nftContract;
         uint256 tokenId;
         uint8 tier;
         uint256 bindTime;
         bool isBound;
     }
-    
+
     // ============================================
     // State Variables
     // ============================================
@@ -56,7 +56,7 @@ contract NFTChecker is Pausable, Ownable {
     // ============================================
     // Events
     // ============================================
-    
+
     /// @notice Emitted when an NFT contract is added to whitelist
     event ContractWhiteListed(address indexed nftContract, uint8 tier);
     /// @notice Emitted when an NFT contract is removed from whitelist
@@ -69,7 +69,7 @@ contract NFTChecker is Pausable, Ownable {
     // ============================================
     // Errors
     // ============================================
-    
+
     /// @notice Thrown when zero address is provided
     error ZeroAddress();
     /// @notice Thrown when tier value is invalid
@@ -85,22 +85,20 @@ contract NFTChecker is Pausable, Ownable {
     /// @notice Thrown when user has no bound NFT to unbind
     error NoBinding();
 
-
     // ============================================
     // Constructor
     // ============================================
-    
+
     /**
      * @notice Initializes the NFTChecker contract
      * @dev Sets the contract owner
      */
     constructor() Ownable(msg.sender) {}
-  
 
     // ============================================
     // View Functions
     // ============================================
-    
+
     /**
      * @notice Verifies if a user owns a specific NFT
      * @dev Returns false if NFT contract is not whitelisted
@@ -109,12 +107,11 @@ contract NFTChecker is Pausable, Ownable {
      * @param tokenId NFT token ID
      * @return True if user owns the NFT and contract is whitelisted
      */
-    function verifyOwnership(address user, address nftContract, uint256 tokenId) public view returns(bool){
-        if(!whitelistedContracts[nftContract]) return false;
-        
+    function verifyOwnership(address user, address nftContract, uint256 tokenId) public view returns (bool) {
+        if (!whitelistedContracts[nftContract]) return false;
+
         address owner = IERC721(nftContract).ownerOf(tokenId);
         return owner == user;
-    
     }
 
     /**
@@ -122,10 +119,9 @@ contract NFTChecker is Pausable, Ownable {
      * @param nftContract NFT contract address
      * @return Tier level (0 = NONE, 1 = MID, 2 = HIGH)
      */
-    function getNFTTier(address nftContract) public view returns(uint8) {
-        if(!whitelistedContracts[nftContract]) return TIER_NONE;
+    function getNFTTier(address nftContract) public view returns (uint8) {
+        if (!whitelistedContracts[nftContract]) return TIER_NONE;
         return contractTiers[nftContract];
-
     }
 
     /**
@@ -133,10 +129,9 @@ contract NFTChecker is Pausable, Ownable {
      * @param nftContract NFT contract address
      * @return True if contract is in whitelist
      */
-    function isWhitelisted(address nftContract) public view returns(bool){
+    function isWhitelisted(address nftContract) public view returns (bool) {
         return whitelistedContracts[nftContract];
-
-    } 
+    }
 
     /**
      * @notice Gets the complete list of whitelisted NFT contracts
@@ -149,7 +144,7 @@ contract NFTChecker is Pausable, Ownable {
     // ============================================
     // Admin Functions
     // ============================================
-    
+
     /**
      * @notice Adds an NFT contract to the whitelist
      * @dev Only callable by contract owner
@@ -157,10 +152,10 @@ contract NFTChecker is Pausable, Ownable {
      * @param tier Tier level (1 = MID, 2 = HIGH)
      */
     function addWhiteListedContract(address nftContract, uint8 tier) public onlyOwner {
-        if(nftContract == address(0)) revert ZeroAddress();
-        if(tier != TIER_MID && tier != TIER_HIGH) revert InvalidTier();
+        if (nftContract == address(0)) revert ZeroAddress();
+        if (tier != TIER_MID && tier != TIER_HIGH) revert InvalidTier();
 
-        if(!whitelistedContracts[nftContract]) {
+        if (!whitelistedContracts[nftContract]) {
             whitelistedContractsList.push(nftContract);
         }
 
@@ -168,8 +163,6 @@ contract NFTChecker is Pausable, Ownable {
         contractTiers[nftContract] = tier;
 
         emit ContractWhiteListed(nftContract, tier);
-
-
     }
 
     /**
@@ -177,21 +170,20 @@ contract NFTChecker is Pausable, Ownable {
      * @dev Only callable by contract owner
      * @param nftContract NFT contract address
      */
-    function removeWhiteListedContract(address nftContract) public onlyOwner{
+    function removeWhiteListedContract(address nftContract) public onlyOwner {
         ///检查地址是否在白名单中
-        if(!whitelistedContracts[nftContract]) revert NotWhitelisted();
+        if (!whitelistedContracts[nftContract]) revert NotWhitelisted();
         ///从mapping中删除
         delete whitelistedContracts[nftContract];
         delete contractTiers[nftContract];
         ///发送事件
         emit ContractRemove(nftContract);
-
     }
 
     // ============================================
     // User Functions
     // ============================================
-    
+
     /**
      * @notice Binds an NFT to the caller's account
      * @dev One user can only bind one NFT at a time
@@ -200,29 +192,24 @@ contract NFTChecker is Pausable, Ownable {
      */
     function bindNFT(address nftContract, uint256 tokenId) public whenNotPaused {
         //检查用户是否在白名单中
-        if(!whitelistedContracts[nftContract]) revert NotWhitelisted();
+        if (!whitelistedContracts[nftContract]) revert NotWhitelisted();
         ///检查用户是否已绑定
-        if(userBindings[msg.sender].isBound) revert UserAlreadyBound();
+        if (userBindings[msg.sender].isBound) revert UserAlreadyBound();
         //NFT是否绑定
-        if(nftBound[nftContract][tokenId]) revert NFTAlreadyBound();
+        if (nftBound[nftContract][tokenId]) revert NFTAlreadyBound();
         ///检查是否持有NFT
         address owner = IERC721(nftContract).ownerOf(tokenId);
-        if(msg.sender != owner)  revert NotOwner();
+        if (msg.sender != owner) revert NotOwner();
         //获得tier等级
         uint8 tier = contractTiers[nftContract];
         //更新UserBinding
         nftBound[nftContract][tokenId] = true;
         userBindings[msg.sender] = UserBinding({
-            nftContract : nftContract,
-            tokenId : tokenId,
-            tier : tier,
-            bindTime : block.timestamp,
-            isBound : true
+            nftContract: nftContract, tokenId: tokenId, tier: tier, bindTime: block.timestamp, isBound: true
         });
 
         //发送事件
         emit NFTBound(msg.sender, nftContract, tokenId, tier);
-       
     }
 
     /**
@@ -231,22 +218,21 @@ contract NFTChecker is Pausable, Ownable {
      */
     function unbindNFT() public whenNotPaused {
         //检查用户是否绑定Nft
-        if(!userBindings[msg.sender].isBound) revert NoBinding();
+        if (!userBindings[msg.sender].isBound) revert NoBinding();
         address nftContract = userBindings[msg.sender].nftContract;
         uint256 tokenId = userBindings[msg.sender].tokenId;
-        //删除nftBound 
+        //删除nftBound
         delete nftBound[nftContract][tokenId];
         //删除用户绑定信息
-        delete userBindings[msg.sender]; 
+        delete userBindings[msg.sender];
         //发送事件
         emit NFTUnbound(msg.sender);
-
     }
 
     // ============================================
-    // Pause Functions 
+    // Pause Functions
     // ============================================
-    
+
     /**
      * @notice Pauses NFT binding/unbinding operations
      * @dev Only callable by contract owner
@@ -262,8 +248,4 @@ contract NFTChecker is Pausable, Ownable {
     function unpause() public onlyOwner {
         _unpause();
     }
-
-    
-
-
 }

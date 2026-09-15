@@ -13,7 +13,7 @@ import "../interfaces/IRevenueRebatePool.sol";
  * @title CURStaking - Main Staking Contract
  * @notice Core contract for CUR token staking
  * @dev Handles staking CUR to mint sCUR, gauge operations for yield, and user weight management
- * 
+ *
  * Features:
  * - Stake CUR to receive sCUR (yield-bearing token)
  * - Enter/exit gauge to participate in inflation rewards
@@ -48,7 +48,7 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
     // ============================================
     // Events
     // ============================================
-    
+
     /// @notice Emitted when a user stakes CUR and receives sCUR
     event Staked(address indexed user, uint256 CURAmount, uint256 sCURAmount);
 
@@ -95,7 +95,7 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
     // ============================================
     // Constructor
     // ============================================
-    
+
     /**
      * @notice Initializes the CURStaking contract
      * @dev Sets up all required contract references
@@ -104,7 +104,9 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
      * @param _gauge Address of the IncentiveGauge contract
      * @param _veLock Address of the veCURLock contract
      */
-    constructor(address _curToken, address _sCURToken, address _gauge, address _veLock, address _revenueRebatePool) Ownable(msg.sender){
+    constructor(address _curToken, address _sCURToken, address _gauge, address _veLock, address _revenueRebatePool)
+        Ownable(msg.sender)
+    {
         if (_curToken == address(0)) revert ZeroAddress();
         if (_sCURToken == address(0)) revert ZeroAddress();
 
@@ -114,15 +116,14 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
         if (_gauge != address(0)) gauge = IIncentiveGauge(_gauge);
 
         if (_veLock != address(0)) veLock = IveCURLock(_veLock);
-        
+
         if (_revenueRebatePool != address(0)) revenueRebatePool = IRevenueRebatePool(_revenueRebatePool);
     }
-    
-    
+
     // ============================================
     // Stake Functions
     // ============================================
-    
+
     /**
      * @notice Stakes CUR tokens and receives sCUR
      * @dev User must approve CUR token spending before calling
@@ -130,7 +131,7 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
      */
     function stake(uint256 CURAmount) public nonReentrant whenNotPaused {
         //判断CURAmount是否大于0
-        if(CURAmount == 0) revert ZeroAmount();
+        if (CURAmount == 0) revert ZeroAmount();
 
         //计算应获得的sCUR
         uint256 exchangeRate = sCURToken.getExchangeRate();
@@ -144,13 +145,12 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
         curToken.transferFrom(msg.sender, address(this), CURAmount);
         //发送事件
         emit Staked(msg.sender, CURAmount, sCURAmount);
-
     }
 
     // ============================================
     // Unstake Functions
     // ============================================
-    
+
     /**
      * @notice Unstakes sCUR tokens and receives underlying CUR
      * @dev Can only unstake sCUR that is NOT locked in the gauge
@@ -158,12 +158,12 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
      */
     function unstake(uint256 sCURAmount) public nonReentrant whenNotPaused {
         //检查scur是否大于零
-        if(sCURAmount == 0) revert ZeroAmount();
-         
+        if (sCURAmount == 0) revert ZeroAmount();
+
         UserInfo storage user = users[msg.sender];
         //判断当前可赎回的scur < scuramount的数量
         uint256 freeSCUR = user.stakedSCUR - user.depositedGauge;
-        if(freeSCUR < sCURAmount) revert InsufficientFreeSCUR();
+        if (freeSCUR < sCURAmount) revert InsufficientFreeSCUR();
 
         //更新用户状态
         user.stakedSCUR -= sCURAmount;
@@ -173,13 +173,12 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
         curToken.transfer(msg.sender, CURAmount);
         //发送事件
         emit UnStaked(msg.sender, sCURAmount, CURAmount);
-        
     }
 
     // ============================================
     // Gauge Functions
     // ============================================
-    
+
     /**
      * @notice Enters the gauge with sCUR tokens to earn inflation rewards
      * @dev Deposited sCUR cannot be unstaked until gauge exit
@@ -187,21 +186,20 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
      */
     function enterGauge(uint256 sCURAmount) public nonReentrant whenNotPaused {
         //检查amount
-        if(sCURAmount == 0) revert ZeroAmount();
+        if (sCURAmount == 0) revert ZeroAmount();
         UserInfo storage user = users[msg.sender];
         //计算可用的scur
         uint256 availableSCUR = user.stakedSCUR - user.depositedGauge;
-        if(availableSCUR < sCURAmount) revert InsufficientAmount();
+        if (availableSCUR < sCURAmount) revert InsufficientAmount();
         //更新全局变量
-        user.depositedGauge += sCURAmount; 
+        user.depositedGauge += sCURAmount;
 
         sCURToken.transferFrom(msg.sender, address(gauge), sCURAmount);
-        
+
         //通知矿池
         gauge.deposit(msg.sender, sCURAmount);
         //发送事件
-        emit EnterGauge(msg.sender, sCURAmount);            
-    
+        emit EnterGauge(msg.sender, sCURAmount);
     }
 
     /**
@@ -210,42 +208,41 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
      */
     function exitGauge(uint256 sCURAmount) public nonReentrant whenNotPaused {
         //检查scuramount是否小于零
-        if(sCURAmount == 0) revert ZeroAmount();
+        if (sCURAmount == 0) revert ZeroAmount();
         //获得用户信息
         UserInfo storage user = users[msg.sender];
         //计算可赎回的scur
         uint256 exitSCUR = user.depositedGauge;
-        if(exitSCUR < sCURAmount) revert InsufficientAmount();
+        if (exitSCUR < sCURAmount) revert InsufficientAmount();
 
         //更新全局变量
         user.depositedGauge -= sCURAmount;
-        
+
         //通知矿池
         gauge.withdraw(msg.sender, sCURAmount);
         //发送事件
         emit ExitGauge(msg.sender, sCURAmount);
-
     }
 
     /**
      * @notice Emergency withdrawal when contract is paused
      * @dev Users forfeit all pending rewards. Only available when contract is paused.
      */
-    function emergencyWithdraw() public nonReentrant whenPaused{
+    function emergencyWithdraw() public nonReentrant whenPaused {
         UserInfo storage user = users[msg.sender];
 
         uint256 sCURAmount = user.stakedSCUR;
         uint256 gaugeAmount = user.depositedGauge;
 
-        if(sCURAmount == 0) revert NoAssets();
+        if (sCURAmount == 0) revert NoAssets();
 
-        if(gaugeAmount > 0){
+        if (gaugeAmount > 0) {
             gauge.gaugeEmergencyWithdraw(msg.sender);
         }
 
         user.stakedSCUR = 0;
         user.depositedGauge = 0;
-    
+
         gauge.emergencyClearReward(msg.sender);
 
         uint256 CURAmount = sCURToken.emergencyRedeem(msg.sender, sCURAmount);
@@ -253,7 +250,6 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
 
         emit EmergencyWithdrawn(msg.sender, sCURAmount, CURAmount);
     }
-
 
     /**
      * @notice Withdraws penalty CUR to RevenueRebatePool
@@ -276,32 +272,27 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
     // ============================================
     // View Functions
     // ============================================
-    
+
     /**
      * @notice Gets comprehensive information about a user
      * @param user Address of the user to query
      * @return stakedSCUR Total sCUR staked by the user
      * @return depositedGauge Amount of sCUR currently deposited in gauge
      */
-    function getUserInfo(address user) public view returns (
-        uint256 stakedSCUR,
-        uint256 depositedGauge
-    ) {
+    function getUserInfo(address user) public view returns (uint256 stakedSCUR, uint256 depositedGauge) {
         UserInfo storage userInfo = users[user];
         return (userInfo.stakedSCUR, userInfo.depositedGauge);
     }
-
 
     /**
      * @notice Returns the total amount of CUR currently staked in the protocol.
      * @dev Equal to the total supply of sCUR.
      * @return Total amount of staked CUR.
      */
-    function getTotalStaked() public view returns(uint256) {
+    function getTotalStaked() public view returns (uint256) {
         return sCURToken.totalSupply();
     }
 
-     
     // ============================================
     // Admin Functions
     // ============================================
@@ -328,7 +319,7 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
      * @param _gauge New IncentiveGauge contract address
      */
     function setGauge(address _gauge) public onlyOwner {
-        if(_gauge == address(0)) revert ZeroAddress();
+        if (_gauge == address(0)) revert ZeroAddress();
         gauge = IIncentiveGauge(_gauge);
     }
 
@@ -338,19 +329,17 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
      * @param _veLock New veCURLock contract address
      */
     function setVeLock(address _veLock) public onlyOwner {
-        if(_veLock == address(0)) revert ZeroAddress();
+        if (_veLock == address(0)) revert ZeroAddress();
         veLock = IveCURLock(_veLock);
     }
-    
+
     /**
      * @notice Updates the RevenueRebatePool contract address
-     * @dev Only callable by owner for protocol upgrades
+     * @dev Only callable by the owner to update the protocol dependency
      * @param _revenueRebatePool New RevenueRebatePool contract address
      */
     function setRevenueRebatePool(address _revenueRebatePool) public onlyOwner {
         if (_revenueRebatePool == address(0)) revert ZeroAddress();
         revenueRebatePool = IRevenueRebatePool(_revenueRebatePool);
     }
-
-
 }
