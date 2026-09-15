@@ -2,9 +2,6 @@
 cache/
 out/
 
-# Dependencies
-lib/
-
 # Deployment artifacts
 broadcast/
 
