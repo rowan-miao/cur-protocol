@@ -18,13 +18,12 @@ interface IsCUR {
     function totalSupply() external view returns (uint256);
     function transferFrom(address from, address to, uint256 amount) external returns (bool);
     function approve(address spender, uint256 amount) external returns (bool);
-    function burnGauge(uint256 sCURAmount) external returns (uint256);
-    function setIncentiveGauge(address _incentiveGauge) external;
+    function burnGaugePenalty(uint256 penalty) external returns (uint256);
 
     event Mint(address indexed to, uint256 CURAmount, uint256 sCURAmount);
     event Redeem(address indexed from, uint256 CURAmount, uint256 sCURAmount);
     event UpdateExchangeRate(uint256 oldRate, uint256 newRate);
     event MinterAdded(address indexed minter);
     event MinterRemoved(address indexed minter);
-    event IncentiveGaugeUpdated(address indexed oldGauge, address indexed newGauge);
+    event PenaltyBurned(address indexed gauge, uint256 sCURBurned, uint256 curAmount);
 }

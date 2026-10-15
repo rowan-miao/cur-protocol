@@ -61,49 +61,21 @@ CUR Staking Protocol 是一个基于加权 Compound Index 模型的去中心化�
 | sCUR | 流动性质押凭证，1:1 锚定底层 CUR |
 | exchangeRate | sCUR 兑换 CUR 的汇率，随协议收入增长 |
 
-### 3.2 合约相关
+### 3.2 操作相关
 
 | 术语 | 定义 |
 |------|------|
-| CURStaking | 主质押合约，用户交互入口，负责 CUR 与 sCUR 的质押和赎回 |
-| IncentiveGauge | 激励矿池合约，负责用户加权质押和 CUR 通胀奖励分发 |
-| veCURLock | 锁仓加成管理器，负责锁仓状态、锁仓系数和提前解锁惩罚 |
-| NFTChecker | NFT 权限验证器，负责验证 NFT 所有权及锁仓权限 |
-| RevenueRebatePool | 协议收入反哺池，负责收集协议收入和罚没资金，并将 CUR 反哺至 CURStaking，同时更新 sCUR 兑换率 |
-
-### 3.3 操作相关
-
-| 术语 | 定义 |
-|------|------|
-| stake | 用户质押 CUR 获得 sCUR 的操作 |
-| unstake | 用户销毁 sCUR 赎回 CUR 的操作 |
-| enterGauge | 用户将 sCUR 存入激励矿池的操作 |
-| exitGauge | 用户从激励矿池取出 sCUR 的操作 |
+| stake | 用户通过 CURStaking 质押 CUR，并获得相应 sCUR 的操作 |
+| unstake | 用户通过 CURStaking 销毁 sCUR，并赎回对应 CUR 的操作 |
+| enterGauge | 用户将 sCUR 存入激励矿池，参与加权质押及 CUR 通胀奖励分配的操作 |
+| exitGauge | 用户从激励矿池取回 sCUR 的操作，不等同于赎回 CUR |
 | lock | 用户锁定 sCUR 以获得加成系数的操作 |
-| earlyUnlock | 用户在锁仓到期前提前解锁的操作 |
-| getReward | 用户领取通胀奖励的操作 |
+| unlock | 用户在锁仓到期正常解除锁仓限制的操作 |
+| earlyUnlock | 用户在锁仓到期前提前解除锁仓的操作 |
+| bindNFT | 用户绑定符合协议要求的 NFT，以获得对应等级的锁仓期限权限的操作。 |
+| unbindNFT | 用户解绑NFT的操作 |
+| getReward | 用户领取激励矿池中已累积且可领取的 CUR 通胀奖励的操作 |
 
-### 3.4 状态变量
-
-| 术语 | 定义 |
-|------|------|
-| totalWeight | IncentiveGauge 中的全网总权重，Σ(User Weight) |
-| rewardPerToken | 全局奖励指数，表示每个单位权重累积的奖励 |
-| rewardPerTokenPaid | 用户上次记录的奖励指数 |
-| pendingRewards | 用户待领取的 CUR 奖励 |
-| emissionRate | 每秒释放的 CUR 数量，随时间递减 |
-| totalUnderlying | sCUR 合约持有的底层 CUR 总量 |
-| bonusFactor | 锁仓加成系数（1.15x ~ 2.50x） |
-| depositedGauge | 用户在矿池中的 sCUR 数量 |
-| penalty | 提前解锁时被罚没的 sCUR 数量 |
-
-
-### 3.5 技术常数
-
-| 术语 | 定义 |
-|------|------|
-| PRECISION | 精度常数（1e18），用于固定点运算 |
-| PENALTY_RATE | 惩罚率常数（5000），表示 50% |
 
 ---
 
@@ -121,226 +93,184 @@ CUR Staking Protocol 是一个基于加权 Compound Index 模型的去中心化�
 
 | 模块 | 功能 | 优先级 | 计划迭代 | 依赖 |
 |------|------|--------|---------|------|
-| 基础质押 | stake / unstake | P0 | 第1期 | CURToken, sCUR |
+| 基础质押 | stake / unstake | P0 | 第1期 | CURToken, sCUR，CURStaking |
 | 质押凭证 | sCUR 1:1 铸造 / 销毁及本金锚定 | P0 | 第1期 | CURToken, CURStaking, sCUR |
-| 通胀奖励 | IncentiveGauge | P0 | 第1期 | sCUR, CURStaking |
-| 锁仓加成 | veCURLock | P1 | 第1期 | CURStaking |
+| 通胀奖励 | IncentiveGauge | P0 | 第1期 | CURToken，sCUR, CURStaking |
+| 锁仓加成 | veCURLock | P1 | 第1期 | CURStaking，sCUR，IncentiveGauge |
 | NFT 权限 | NFTChecker | P2 | 第2期 | veCURLock |
-| 收入反哺 | RevenueRebatePool | P1 | 第1期 | sCUR，CURStaking |
+| 收入反哺 | RevenueRebatePool | P1 | 第1期 | CURToken，sCUR，CURStaking |
 
 ---
-
-## 5. 功能详述
+## 5. 功能详述（产品视角）
 
 ### 5.1 流动性质押凭证（sCUR）
 
 #### 5.1.1 功能描述
 
-sCUR 是生息质押凭证，代表用户质押的 CUR 份额，汇率随协议收入增长。
+sCUR 是用户质押 CUR 后获得的生息凭证，代表用户在协议中的质押份额。sCUR 可自由转账、交易，也可存入激励矿池参与奖励分配。
 
-#### 5.1.2 函数规格
+#### 5.1.2 用户能做什么
 
-**mint(address to, uint256 CURAmount)**
-
-| 项目 | 说明 |
-|------|------|
-| 功能 | 铸造 sCUR（仅 CURStaking 可调用） |
-| 参数 | `to` : 接收地址<br>`CURAmount` : 质押的 CUR 数量 |
-| 返回 | `sCURAmount` : 铸造的 sCUR 数量 |
-| 权限 | 仅 Minter（CURStaking）|
-| 异常 | `ZeroAddress`: to 为 0 <br> `ZeroAmount`: CURAmount == 0 |
-| 事件 | `Mint(address indexed to, uint256 CURAmount, uint256 sCURAmount)` |
-
-**redeem(address from, uint256 sCURAmount)**
-
-| 项目 | 说明 |
-|------|------|
-| 功能 | 销毁 sCUR，释放 CUR（仅 CURStaking 可调用） |
-| 参数 | `from` : 持有者地址 <br>`sCURAmount` : 销毁数量 |
-| 返回 | `CURAmount` : 释放的 CUR 数量 |
-| 权限 | 仅 Minter（CURStaking）|
-| 异常 | `ZeroAddress`: from 为 0<br>`ZeroAmount`: sCURAmount == 0 |
-| 事件 | `Redeem(address indexed from, uint256 CURAmount, uint256 sCURAmount)` |
-
-**updateExchangeRate(uint256 additionalCUR)**
-
-| 项目 | 说明 |
-|------|------|
-| 功能 | 协议收入注入，更新汇率（仅 RevenueRebatePool 可调用） |
-| 参数 | `additionalCUR` : 注入的 CUR 数量 |
-| 返回 | `newRate` : 新汇率 |
-| 权限 | 仅 Minter（RevenueRebatePool）|
-| 异常 | `ZeroAmount`: additionalCUR == 0<br>`ExchangeRateCannotDecrease`: 汇率不能下降 |
-| 事件 | `UpdateExchangeRate(uint256 oldRate, uint256 newRate)` |
+| 操作 | 说明 |
+|---|---|
+| 持有 sCUR | 代表质押份额，价值随协议收入增长 |
+| 转账 sCUR | 可在钱包间自由转移 |
+| 交易 sCUR | 可在 DEX 上交易（如已集成） |
+| 存入矿池 | 通过 `enterGauge` 参与激励奖励 |
 
 #### 5.1.3 业务规则
 
-- 汇率更新公式：`exchangeRate_new = totalUnderlying × PRECISION / totalSupply(sCUR)`
-- 汇率只升不降，仅由协议收入驱动
+- **兑换率**：sCUR 兑换 CUR 的比率，随协议收入注入而单调增长
+- **初始汇率**：1 sCUR = 1 CUR
+- **汇率只升不降**：仅由协议收入驱动，不受通胀奖励影响
+- **收益来源**：协议收入注入 → `totalUnderlying` 增加 → 汇率上升
+- **用户收益**：持有 sCUR 即可享受基础收益（体现在汇率增长中）
+
+#### 5.1.4 用户价值
+
+- **流动性**：sCUR 可自由转账、交易，解决传统质押的流动性锁定问题
+- **可组合性**：sCUR 可被其他 DeFi 协议集成
+- **被动收益**：持有即享受基础收益，无需额外操作
+
+---
 
 ### 5.2 主质押合约（CURStaking）
 
 #### 5.2.1 功能描述
 
-用户质押入口，管理 CUR ↔ sCUR 兑换，与矿池交互。
+CURStaking 是用户质押 CUR 和赎回 CUR 的主要入口，负责协调 CUR 与 sCUR 的转换，并与激励矿池交互。
 
-#### 5.2.2 函数规格
+#### 5.2.2 用户能做什么
 
-**stake(uint256 CURAmount)**
+| 操作 | 说明 | 前提 |
+|---|---|---|
+| 质押 CUR（`stake`） | 存入 CUR，获得等值 sCUR | 已授权 CUR、余额足够、数量 ≥ 最低门槛 |
+| 赎回 CUR（`unstake`） | 销毁 sCUR，取回 CUR | sCUR 在钱包中（未存入矿池）、未锁仓 |
+| 进入矿池（`enterGauge`） | 将 sCUR 存入激励矿池 | sCUR 在钱包中、未锁仓 |
+| 退出矿池（`exitGauge`） | 从矿池取回 sCUR | 未锁仓 |
 
-| 项目 | 说明 |
-|------|------|
-| 功能 | 用户质押 CUR，获取 sCUR |
-| 参数 | `CURAmount` : 质押的 CUR 数量 |
-| 返回 | `sCURAmount` : 获得的 sCUR 数量 |
-| 异常 | `ZeroAmount`: CURAmount == 0<br>`InsufficientAmount`: 余额不足 |
-| 事件 | `Staked(address indexed user, uint256 CURAmount, uint256 sCURAmount)` |
-| 权限 | 公开 |
+#### 5.2.3 业务规则
 
-**unstake(uint256 sCURAmount)**
+**质押（stake）**
+- 用户按当前汇率获得 sCUR
+- 有最低质押门槛（防止粉尘攻击）
+- 质押后 sCUR 直接发放到用户钱包
 
-| 项目 | 说明 |
-|------|------|
-| 功能 | 销毁 sCUR，赎回 CUR |
-| 参数 | `sCURAmount` : 赎回的 sCUR 数量 |
-| 返回 | `CURAmount` : 获得的 CUR 数量 |
-| 异常 | `ZeroAmount`: sCURAmount == 0<br>`InsufficientFreeSCUR`: 可用 sCUR 不足<br>`InsufficientBalance`: 合约余额不足 |
-| 事件 | `UnStaked(address indexed user, uint256 sCURAmount, uint256 CURAmount)` |
-| 权限 | 公开 |
+**赎回（unstake）**
+- 用户按当前汇率取回 CUR
+- 只能赎回钱包中的 sCUR，矿池中的 sCUR 需先 `exitGauge`
+- 锁仓期间不能赎回
 
-**enterGauge(uint256 sCURAmount)**
+**进入矿池（enterGauge）**
+- sCUR 从用户钱包转入激励矿池托管
+- 锁仓期间不能进入矿池
+- 可多次进入，累加
 
-| 项目 | 说明 |
-|------|------|
-| 功能 | 将 sCUR 存入激励矿池 |
-| 参数 | `sCURAmount` : 存入数量 |
-| 异常 | `ZeroAmount`: sCURAmount == 0<br>`InsufficientAmount`: 可用 sCUR 不足 |
-| 事件 | `EnterGauge(address indexed user, uint256 sCURAmount)` |
-| 权限 | 公开 |
+**退出矿池（exitGauge）**
+- sCUR 从矿池转回用户钱包
+- 锁仓期间不能退出矿池
+- 可部分退出
 
-**exitGauge(uint256 sCURAmount)**
+#### 5.2.4 用户价值
 
-| 项目 | 说明 |
-|------|------|
-| 功能 | 从激励矿池取出 sCUR |
-| 参数 | `sCURAmount` : 取出数量 |
-| 异常 | `ZeroAmount`: sCURAmount == 0<br>`InsufficientAmount`: 矿池余额不足 |
-| 事件 | `ExitGauge(address indexed user, uint256 sCURAmount)` |
-| 权限 | 公开 |
+- **一站式入口**：质押、赎回、参与激励都在一个合约完成
+- **灵活进出**：可部分质押、部分赎回、部分进出矿池
+- **安全托管**：CUR 本金由合约托管，sCUR 由用户自己持有
+
+---
 
 ### 5.3 激励矿池（IncentiveGauge）
 
 #### 5.3.1 功能描述
 
-用户将 sCUR 存入矿池参与权重竞争，权重基于锁仓系数，可获得 CUR 通胀奖励。
+激励矿池是用户通过质押 sCUR 参与 CUR 通胀奖励分配的场所。用户的奖励份额由"加权质押量"决定，权重越高，分到的奖励越多。
 
-#### 5.3.2 函数规格
+#### 5.3.2 用户能做什么
 
-**deposit(address user, uint256 amount)**
+| 操作 | 说明 | 前提 |
+|---|---|---|
+| 领取奖励（`getReward`） | 领取累积的 CUR 通胀奖励 | 有可领取奖励 |
+| 查看奖励 | 查询待领取奖励 | — |
 
-| 项目 | 说明 |
-|------|------|
-| 功能 | 将 sCUR 存入矿池 |
-| 参数 | `user` : 用户地址，`amount` : 存入数量 |
-| 权限 | 仅 `CURStaking` 可调用 |
-| 异常 | `ZeroAmount`: amount == 0<br>`Unauthorized`: 调用者非 CURStaking |
-
-**withdraw(address user, uint256 amount)**
-
-| 项目 | 说明 |
-|------|------|
-| 功能 | 从矿池取出 sCUR |
-| 参数 | `user` : 用户地址，`amount` : 取出数量 |
-| 权限 | 仅 `CURStaking` 可调用 |
-| 异常 | `ZeroAmount`: amount == 0<br>`InsufficientAmount`: 矿池余额不足 |
-
-**getReward()**
-
-| 项目 | 说明 |
-|------|------|
-| 功能 | 领取待领取的 CUR 奖励 |
-| 权限 | 公开（仅用户本人） |
-| 异常 | `ZeroReward`: 无奖励可领取 |
 
 #### 5.3.3 业务规则
 
-- 奖励指数更新：`rewardPerToken += (emissionRate × Δt × PRECISION) / totalWeight`
-- 用户奖励：`pending += userWeight × (rewardPerToken - userRewardPerTokenPaid) / PRECISION`
-- 释放速率随时间递减（4年计划）
+**奖励来源**
+- CUR 通胀奖励按预设的 4 年释放计划产出
+- 释放速率逐年递减（第 1 年 1500 万，第 2 年 1200 万，第 3 年 800 万，第 4 年 500 万）
+
+**奖励分配**
+- 按用户权重占全网总权重的比例分配
+- 权重 = 质押 sCUR 数量 × 加成系数
+- 加成系数由锁仓时长决定（1.0x ~ 2.5x）
+
+**领取方式**
+- 手动领取，奖励以 CUR 形式直接发放到钱包
+- 不自动复利
+
+**权重变化**
+- 所有权重变化（存入、取出、锁仓、解锁）在下次结算后生效
+- 不回溯历史区间
+
+#### 5.3.4 用户价值
+
+- **竞争性收益**：锁仓越久，权重越高，分到的奖励越多
+- **透明分配**：奖励按权重比例分配，公式公开
+- **可持续性**：奖励释放与协议收入分离，避免死亡螺旋
+
+---
 
 ### 5.4 锁仓加成（veCURLock）
 
-#### 5.4.1 加权规则
+#### 5.4.1 功能描述
 
-| 锁仓时长 | 加成系数 | NFT 权限 |
-|---------|---------|---------|
-| 30天 | 1.15x | 无门槛 |
-| 90天 | 1.35x | 无门槛 |
-| 180天 | 1.65x | 无门槛 |
-| 365天 | 2.00x | 中级 NFT |
-| 730天 | 2.50x | 高级 NFT |
+锁仓加成管理器允许用户通过承诺锁仓时长来提升加权系数，从而在激励矿池中占据更大份额。
 
-#### 5.4.2 函数规格
+#### 5.4.2 用户能做什么
 
-**lock(uint256 duration)**
+| 操作 | 说明 | 前提 |
+|---|---|---|
+| 锁仓（`lock`） | 锁定矿池中的 sCUR，获得加成系数 | 矿池中有 sCUR、未锁仓 |
+| 正常解锁（`unlock`） | 锁仓到期后解除锁定 | 锁仓已到期 |
+| 提前解锁（`earlyUnlock`） | 锁仓到期前解除锁定，触发惩罚 | 锁仓未到期 |
 
-| 项目 | 说明 |
-|------|------|
-| 功能 | 用户锁仓，获得加权权重 |
-| 参数 | `duration` : 锁仓时长（秒） |
-| 异常 | `InvalidDuration`: 时长无效<br> `DurationExceedsPermission`: 超出 NFT 权限<br>`AlreadyLocked`: 已锁仓 |
-| 事件 | `Locked(address indexed user, uint256 duration, uint256 bonusFactor, uint256 endTime)` |
+#### 5.4.3 锁仓档位与加成系数
 
-**unlock()**
+| 锁仓时长 | 加成系数 | NFT 权限要求 |
+|---|---|---|
+| 30 天 | 1.15x | 无门槛 |
+| 90 天 | 1.35x | 无门槛 |
+| 180 天 | 1.65x | 无门槛 |
+| 365 天 | 2.00x | 需持有中级 NFT |
+| 730 天 | 2.50x | 需持有高级 NFT |
 
-| 项目 | 说明 |
-|------|------|
-| 功能 | 用户正常解锁 |
-| 异常 | `NotLocked`: 未锁仓<br> `NotExpired`: 锁仓时限未到|
-| 事件 | `Unlocked(address indexed user, uint256 amount);` |
+#### 5.4.4 业务规则
 
-**earlyUnlock()**
+**锁仓（lock）**
+- 锁仓时长必须是预设档位之一
+- 锁仓时长不能超过用户 NFT 权限对应的上限
+- 用户同一时间只能有一个锁仓承诺
+- 锁仓作用于矿池中的 sCUR，不影响钱包中的 sCUR
 
-| 项目 | 说明 |
-|------|------|
-| 功能 | 提前解锁，执行惩罚 |
-| 异常 | `NotLocked`: 未锁仓<br>`AlreadyExpired`: 已到期 |
-| 事件 | `EarlyUnlocked(address indexed user, uint256 amount, uint256 penalty)` |
+**正常解锁（unlock）**
+- 锁仓到期后可正常解锁
+- 无惩罚
+- 加成系数重置为 1.0x
+- 权重按当前质押量重算
 
-**bindNFT(address nftContract, uint256 tokenId)**
+**提前解锁（earlyUnlock）**
+- 锁仓到期前可提前解锁，但触发惩罚
+- **本金罚没**：按公式罚没部分 sCUR
+  - `Penalty = 本金 × 50% × (剩余时间 / 总锁仓时长)`
+- **收益罚没**：未领取的 CUR 奖励 100% 没收，转入收入池
+- **权益重置**：加成系数重置为 1.0x
+- **NFT 释放**：解除 NFT 绑定，NFT 恢复自由状态
 
-| 项目 | 说明 |
-|------|------|
-| 功能 | 绑定 NFT 获取锁仓权限 |
-| 参数 | `nftContract` : NFT 合约地址<br>`tokenId` : NFT ID |
-| 权限 | 公开 |
-| 异常 | `NotNFTOwner`: 不是 NFT 持有者<br>`AlreadyBound`: NFT 已被绑定 |
-| 事件 | `NFTBound(address indexed user, address indexed nftContract, uint256 tokenId, uint8 tier)` |
+#### 5.4.5 用户价值
 
-**unbindNFT()**
-
-| 项目 | 说明 |
-|------|------|
-| 功能 | 解绑 NFT |
-| 权限 | 公开 |
-| 异常 | `NotBound`: 未绑定 NFT |
-| 事件 | `NFTUnbound(address indexed user)` |
-
-**getBonus(address user)**
-
-| 项目 | 说明 |
-|------|------|
-| 功能 | 获取用户当前加成系数 |
-| 返回 | `bonusFactor` - 加成系数（1e18 = 1.0x）|
-| 权限 | 公开（view）|
-
-#### 5.4.3 惩罚公式
-
- > penalty = amount × 50% × (剩余锁仓天数 / 总锁仓天数)
-
-
-- 本金罚没：销毁 penalty 数量的 sCUR
-- 收益罚没：未领取的 CUR 奖励转入收入池
+- **长期激励**：锁仓越久，加成越高
+- **灵活退出**：可提前解锁，但需支付惩罚
+- **NFT 权限**：持有 NFT 可解锁更高档位
 
 ---
 
@@ -348,56 +278,47 @@ sCUR 是生息质押凭证，代表用户质押的 CUR 份额，汇率随协议�
 
 #### 5.5.1 功能描述
 
-管理 NFT 白名单，验证用户 NFT 持有情况，提供锁仓权限等级。
+NFTChecker 管理 NFT 白名单，验证用户 NFT 持有情况，决定用户可用的最大锁仓时长。
 
-#### 5.5.2 函数规格
+#### 5.5.2 用户能做什么
 
-**addWhitelistedContract(address nftContract, uint8 tier)**
+| 操作 | 说明 | 前提 |
+|---|---|---|
+| 绑定 NFT（`bindNFT(nftContract, tokenId)`） | 绑定 NFT 以获得锁仓权限 | NFT 在白名单中、用户持有该 NFT、用户未绑定、NFT 未被绑定 |
+| 解绑 NFT（`unbindNFT()`） | 解除自己的 NFT 绑定 | 未锁仓、已绑定 |
 
-| 项目 | 说明 |
-|------|------|
-| 功能 | 添加 NFT 合约到白名单 |
-| 参数 | `nftContract` : NFT 合约地址<br>`tier` : 等级（1=中级，2=高级）|
-| 权限 | 仅 Owner |
-| 异常 | `ZeroAddress`: 地址为 0<br>`InvalidTier`: 等级无效 |
-| 事件 | `ContractWhiteListed(address indexed nftContract, uint8 tier)` |
+#### 5.5.3 NFT 等级与权限
 
-**removeWhitelistedContract(address nftContract)**
+| 等级 | 常量 | 解锁权限 |
+|---|---|---|
+| 中级 NFT | `TIER_MID = 1` | 365 天锁仓 |
+| 高级 NFT | `TIER_HIGH = 2` | 730 天锁仓 |
 
-| 项目 | 说明 |
-|------|------|
-| 功能 | 从白名单移除 NFT 合约 |
-| 参数 | `nftContract` : NFT 合约地址 |
-| 权限 | 仅 Owner |
-| 异常 | `NotWhitelisted`: 合约不在白名单中 |
-| 事件 | `ContractRemove(address indexed nftContract)` |
+**无 NFT**：仅可选 ≤180 天锁仓。
 
-**bindNFT(address nftContract, uint256 tokenId)**
+> 实际白名单由 Owner 通过 `addWhiteListedContract` 添加，具体 NFT 类型（合作伙伴、贡献者、治理等）由部署时决定。
 
-| 项目 | 说明 |
-|------|------|
-| 功能 | 用户绑定 NFT 到账户 |
-| 参数 | `nftContract` : NFT 合约地址<br>`tokenId` : NFT ID |
-| 权限 | 公开 |
-| 异常 | `NotWhitelisted`: NFT 不在白名单<br>`UserAlreadyBound`: 用户已绑定<br>`NFTAlreadyBound`: NFT 已被绑定<br>`NotOwner`: 用户不是 NFT 持有者 |
-| 事件 | `NFTBound(address indexed user, address indexed nftContract, uint256 tokenId, uint8 tier)` |
+#### 5.5.4 业务规则
 
-**unbindNFT()**
+**绑定（bindNFT）**
+- 用户必须是 NFT 的持有者（`ownerOf(tokenId)` 校验）
+- 同一用户同时只能绑定 1 个 NFT
+- 同一 NFT 同时只能绑定 1 个用户
+- NFT 合约必须在白名单中
 
-| 项目 | 说明 |
-|------|------|
-| 功能 | 用户解绑 NFT |
-| 权限 | 公开 |
-| 异常 | `NoBinding`: 用户未绑定 NFT |
-| 事件 | `NFTUnbound(address indexed user)` |
+**解绑（unbindNFT）**
+- **锁仓期间不能解绑**（`PositionLocked`）
+- 未绑定 NFT 时不能解绑（`NotBound`）
+- 解绑后 NFT 恢复自由，可用于其他账户
 
-**getMaxLockDays(address user)**
+**权限生效**
+- 权限变化仅影响后续锁仓，不回溯历史奖励
 
-| 项目 | 说明 |
-|------|------|
-| 功能 | 获取用户最大可锁仓天数 |
-| 返回 | `maxDays` : 最大锁仓天数（180/365/730）|
-| 权限 | 公开（view）|
+#### 5.5.5 用户价值
+
+- **身份权益**：NFT 持有者解锁更高锁仓档位
+- **防滥用**：同一 NFT 不能同时绑定多个账户
+- **灵活性**：可随时解绑（未锁仓时）
 
 ---
 
@@ -405,54 +326,110 @@ sCUR 是生息质押凭证，代表用户质押的 CUR 份额，汇率随协议�
 
 #### 5.6.1 功能描述
 
-收集协议收入，定期注入 sCUR 池提升汇率。
+收入反哺池收集协议收入和罚没资金，定期注入 CURStaking 以提升 sCUR 兑换率，使所有 sCUR 持有者受益。
 
-#### 5.6.2 函数规格
+#### 5.6.2 用户能做什么
 
-**depositRevenue(uint256 amount)**
+> 收入反哺池的注入操作由 Owner 触发，普通用户被动受益。
 
-| 项目 | 说明 |
-|------|------|
-| 功能 | 存入协议收入 |
-| 参数 | `amount` : 存入的 CUR 数量 |
-| 权限 | 公开（协议收入来源）|
-| 异常 | `ZeroAmount`: amount == 0 |
-| 事件 | `RevenueDeposited(address indexed user, uint256 amount)` |
+| 操作 | 说明 | 权限 |
+|---|---|---|
+| 存入收入（`depositRevenue`） | 存入 CUR 到收入池 | 公开 |
+| 注入 sCUR 池（`injectToSCUR`） | 将指定数量收入注入 sCUR 池 | 仅 Owner |
+| 全部注入（`injectAll`） | 注入全部累计收入 | 仅 Owner |
+| 设置阈值（`setNewthreshold`） | 设置自动注入阈值 | 仅 Owner |
 
+#### 5.6.3 业务规则
 
-**injectToSCUR(uint256 amount)**
+**收入来源**
+- 协议手续费、生态分红等外部收入
+- 提前解锁的罚没资金
 
-| 项目 | 说明 |
-|------|------|
-| 功能 | 将收入注入 sCUR 池 |
-| 参数 | `amount` : 注入的 CUR 数量 |
-| 权限 | 仅 Owner |
-| 异常 | `ZeroAmount`: amount == 0<br>`ExceedsRevenue`: 超过累计收入<br>`InsufficientBalance`: 合约余额不足 |
-| 事件 | `RevenueInjected(uint256 amount)` |
+**注入机制**
+- 收入注入 CURStaking，调用 `updateExchangeRate` 提升 sCUR 汇率
+- 仅当 sCUR 总供应量 > 0 时可注入
+- 汇率只升不降
 
-**injectAll()**
+**用户受益**
+- 所有 sCUR 持有者按持有比例分享收益
+- 无需操作，自动体现在汇率增长中
 
-| 项目 | 说明 |
-|------|------|
-| 功能 | 注入全部累计收入 |
-| 权限 | 仅 Owner |
-| 异常 | `BelowThreshold`: 低于阈值 |
-| 事件 | `RevenueInjectedAll(uint256 amount)` |
+#### 5.6.4 用户价值
 
+- **被动收益**：持有 sCUR 即可享受协议收入
+- **公平分配**：按 sCUR 持有量比例分配
+- **可持续性**：协议收入反哺，减少对通胀的依赖
 
-**setThreshold(uint256 newThreshold)**
+### 5.7 空投合约（Airdrop）
 
-| 项目 | 说明 |
-|------|------|
-| 功能 | 设置自动注入阈值 |
-| 参数 | `newThreshold` : 新阈值 |
-| 权限 | 仅 Owner |
-| 事件 | `ThresholdUpdated(uint256 newthreshold)` |
+#### 5.7.1 功能描述
 
+Airdrop 合约负责向白名单用户分发固定数量的 CUR 空投奖励，作为协议早期支持者的激励。每个白名单地址限领一次，支持暂停。
+
+#### 5.7.2 用户能做什么
+
+| 操作 | 说明 | 前提 |
+|---|---|---|
+| 领取空投（`claim`） | 领取固定数量的 CUR 空投 | 在白名单中、未领取过 |
+| 查询资格 | 查询自己是否在白名单、是否已领取 | — |
+| 查询剩余 | 查询合约剩余可分发 CUR | — |
+
+> 白名单管理、存入 CUR 由 Owner 操作，普通用户不直接操作。
+
+#### 5.7.3 业务规则
+
+**空投数量**
+- 每个白名单地址固定领取 1000 CUR
+
+**领取条件**
+- 地址必须在白名单中
+- 每个地址只能领取一次
+- 合约必须有 ≥ 1000 CUR 的余额
+- 合约未暂停
+
+**领取方式**
+- 用户主动调用 `claim`，CUR 直接发放到钱包
+- 不支持代领
+
+**白名单管理（Owner）**
+
+- 单个添加：addToWhitelist(user)
+
+- 批量添加：addWhitelist(address[] users)
+
+- 移除：removeFromWhitelist(user)
+
+**存入 CUR（Owner）**
+
+- deposit(amount)：Owner 将 CUR 转入合约，用于分发
+
+#### 5.7.4 用户价值
+
+- **早期激励**：奖励早期支持者
+- **公平分发**：白名单机制，每个地址限领一次
+- **简单直接**：一键领取，无需复杂操作
+
+#### 5.7.5 权限与治理
+
+| 操作 | 权限 |
+|---|---|
+| 添加白名单 | 仅 Owner |
+| 批量添加白名单 | 仅 Owner |
+| 移除白名单 | 仅 Owner |
+| 存入 CUR | 仅 Owner |
+| 暂停/恢复 | 仅 Owner |
+
+#### 5.7.6 关键约束
+
+| 约束	| 说明 |
+|---|---|
+| 固定空投量 | 1000 CUR / 地址 |
+| 单次领取	| 每个地址只能领取一次 |
+| 白名单机制| 只有白名单地址可领取 |
+| 可暂停 |	Owner 可暂停/恢复领取 |
+| 余额校验 |	合约余额不足时 revert InsufficientBalance |
 
 ---
-
-
 
 ## 6. 验收标准（Acceptance Criteria）
 
@@ -461,32 +438,39 @@ sCUR 是生息质押凭证，代表用户质押的 CUR 份额，汇率随协议�
 ```gherkin
 Scenario: 用户成功质押 CUR
   Given 用户 alice 有 1000 CUR 余额
-  And  用户 alice 已授权合约使用 1000 CUR
+  And  用户 alice 已授权 CURStaking 使用 1000 CUR
   When 用户 alice 调用 stake(1000)
   Then 用户 alice 收到 1000 sCUR（初始汇率 1:1）
-  And CURStaking 合约 CUR 余额增加 1000
-  And 用户 alice 的 stakedSCUR = 1000
-  And 触发 Staked(alice, 1000, 1000)
+  And  CURStaking 合约 CUR 余额增加 1000
+  And  用户 alice 的 sCUR 余额为 1000
+  And  触发 Staked(alice, 1000, 1000) 事件
+  And  触发 Mint(alice, 1000, 1000) 事件
 
 Scenario: 用户质押数量为 0
   Given 用户 alice 有 1000 CUR 余额
   When 用户 alice 调用 stake(0)
   Then 交易回滚，错误 ZeroAmount
 
+Scenario: 质押数量低于最低要求
+  Given 用户 alice 有 1000 CUR 余额
+  And  当前最低质押量为 minimumStake
+  When 用户 alice 调用 stake(minimumStake - 1)
+  Then 交易回滚，错误 BelowMinimumStake
+
 Scenario: 用户余额不足
   Given 用户 alice 有 500 CUR 余额
   When 用户 alice 调用 stake(1000)
-  Then 交易回滚，错误 InsufficientAmount
+  Then 交易回滚，错误 ERC20InsufficientBalance
 
 Scenario: 用户未授权合约
   Given 用户 alice 有 1000 CUR 余额
-  And  用户 alice 未授权合约使用 CUR
+  And  用户 alice 未授权 CURStaking 使用 CUR
   When 用户 alice 调用 stake(1000)
-  Then 交易回滚
+  Then 交易回滚，错误 ERC20InsufficientAllowance
 
 Scenario: 汇率变化后质押
-  Given 用户 alice 有 1000 CUR 余额
-  And  当前汇率为 1.2（1 sCUR = 1.2 CUR）
+  Given 用户 alice 有 2000 CUR 余额
+  And  当前汇率为 1.2e18（1 sCUR = 1.2 CUR）
   When 用户 alice 调用 stake(1200)
   Then 用户 alice 收到 1000 sCUR
   And  触发 Staked(alice, 1200, 1000) 事件
@@ -497,15 +481,14 @@ Scenario: 汇率变化后质押
 ```gherkin
 Scenario: 用户成功赎回 CUR
   Given 用户 alice 已质押 1000 CUR
-  And 用户 alice 持有 1000 sCUR
-  And 用户 alice 没有将 sCUR 存入 Gauge
-  And sCUR 汇率为 1:1
+  And  用户 alice 持有 1000 sCUR（未存入 Gauge）
+  And  sCUR 汇率为 1:1
   When 用户 alice 调用 unstake(1000)
   Then 用户 alice 的 sCUR 被销毁
-  And 用户 alice 收到 1000 CUR
-  And 用户 alice 的 stakedSCUR = 0
-  And 触发 UnStaked(alice,1000,1000)
-  And 触发 Redeem(alice,1000,1000)
+  And  用户 alice 收到 1000 CUR
+  And  用户 alice 的 sCUR 余额为 0
+  And  触发 UnStaked(alice, 1000, 1000) 事件
+  And  触发 Redeem(alice, 1000, 1000) 事件
 
 Scenario: 赎回数量为 0
   Given 用户 alice 已质押 1000 CUR
@@ -515,18 +498,24 @@ Scenario: 赎回数量为 0
 Scenario: 赎回数量超过可用 sCUR
   Given 用户 alice 已质押 1000 CUR
   And  用户 alice 已将 600 sCUR 存入矿池
+  And  用户 alice 钱包中仅有 400 sCUR
   When 用户 alice 调用 unstake(500)
   Then 交易回滚，错误 InsufficientFreeSCUR
 
-Scenario: 合约 CUR 余额不足
+Scenario: 底层资产不足
   Given 用户 alice 已质押 1000 CUR
-  And  合约 CUR 余额为 500
+  And  sCUR 的 totalUnderlying 小于赎回所需 CUR
   When 用户 alice 调用 unstake(1000)
-  Then 交易回滚，错误 InsufficientBalance
+  Then 交易回滚，错误 InsufficientUnderlying
+
+Scenario: 用户锁仓期间赎回
+  Given 用户 alice 已锁仓 1000 sCUR 30 天
+  When 用户 alice 调用 unstake(100)
+  Then 交易回滚，错误 PositionLocked
 
 Scenario: 汇率变化后赎回
   Given 用户 alice 已质押 1000 CUR（获得 1000 sCUR）
-  And  当前汇率为 1.5（1 sCUR = 1.5 CUR）
+  And  当前汇率为 1.5e18（1 sCUR = 1.5 CUR）
   And  合约有足够 CUR 余额
   When 用户 alice 调用 unstake(1000)
   Then 用户 alice 收到 1500 CUR
@@ -539,10 +528,13 @@ Scenario: 汇率变化后赎回
 Scenario: 用户成功进入矿池
   Given 用户 alice 已质押 1000 CUR
   And  用户 alice 持有 1000 sCUR
-  And  用户 alice 未存入矿池
+  And  用户 alice 已授权 CURStaking 使用 sCUR
   When 用户 alice 调用 enterGauge(600)
-  Then 用户 alice 的 depositedGauge = 600
+  Then 用户 alice 的 sCUR 余额减少 600
+  And  gauge 持有 600 sCUR
+  And  gauge 中 alice 的 depositedGauge = 600
   And  触发 EnterGauge(alice, 600) 事件
+  And  触发 Deposit(alice, 600) 事件
 
 Scenario: 进入矿池数量为 0
   Given 用户 alice 已质押 1000 CUR
@@ -554,11 +546,23 @@ Scenario: 进入矿池数量超过可用 sCUR
   When 用户 alice 调用 enterGauge(1500)
   Then 交易回滚，错误 InsufficientAmount
 
+Scenario: 用户锁仓期间进入矿池
+  Given 用户 alice 已锁仓 1000 sCUR 30 天
+  When 用户 alice 调用 enterGauge(100)
+  Then 交易回滚，错误 PositionLocked
+
+Scenario: 用户未授权 sCUR
+  Given 用户 alice 已质押 1000 CUR
+  And  用户 alice 未授权 CURStaking 使用 sCUR
+  When 用户 alice 调用 enterGauge(600)
+  Then 交易回滚，错误 ERC20InsufficientAllowance
+
 Scenario: 用户多次进入矿池
   Given 用户 alice 已质押 1000 CUR
   When 用户 alice 调用 enterGauge(400)
   And  用户 alice 调用 enterGauge(300)
-  Then 用户 alice 的 depositedGauge = 700
+  Then 用户 alice 的 sCUR 余额减少 700
+  And  gauge 中 alice 的 depositedGauge = 700
 ```
 
 ### 6.4 退出矿池（exitGauge）
@@ -568,7 +572,9 @@ Scenario: 用户成功退出矿池
   And  用户 alice 已存入矿池 600 sCUR
   When 用户 alice 调用 exitGauge(600)
   Then 用户 alice 的 depositedGauge = 0
+  And  用户 alice 的 sCUR 余额增加 600
   And  触发 ExitGauge(alice, 600) 事件
+  And  触发 Withdraw(alice, 600) 事件
 
 Scenario: 退出矿池数量为 0
   Given 用户 alice 已存入矿池 600 sCUR
@@ -580,10 +586,16 @@ Scenario: 退出数量超过矿池余额
   When 用户 alice 调用 exitGauge(800)
   Then 交易回滚，错误 InsufficientAmount
 
+Scenario: 用户锁仓期间退出矿池
+  Given 用户 alice 已锁仓 1000 sCUR 30 天
+  When 用户 alice 调用 exitGauge(100)
+  Then 交易回滚，错误 PositionLocked
+
 Scenario: 用户部分退出矿池
   Given 用户 alice 已存入矿池 600 sCUR
   When 用户 alice 调用 exitGauge(250)
   Then 用户 alice 的 depositedGauge = 350
+  And  用户 alice 的 sCUR 余额增加 250
 ```
 
 ### 6.5 锁仓功能（Lock）
@@ -591,14 +603,15 @@ Scenario: 用户部分退出矿池
 ```gherkin
 Scenario: 用户成功锁仓 30 天
   Given 用户 alice 在矿池中有 1000 sCUR
-  And  用户 alice 持有 1000 sCUR
   When 用户 alice 调用 lock(30 days)
   Then 用户 alice 的锁仓状态变为已锁仓
   And  用户 alice 的加成系数为 1.15e18
   And  用户 alice 的锁仓结束时间为 startTime + 30 days
-  And  totalLocked 增加 1000
+  And  veCURLock 的 totalLocked 增加 1000
   And  触发 Locked(alice, 30 days, 1.15e18, endTime) 事件
-  And  incentiveGauge.executeLock 被调用，传入 (alice, 1000, 1.15e18)
+  And  incentiveGauge.executeLock(alice) 被调用
+  And  gauge 中 alice 的权重更新为 1000 × 1.15e18 / PRECISION = 1150
+  And  触发 LockExecuted(alice) 事件
 
 Scenario: 用户成功锁仓 90 天
   Given 用户 alice 在矿池中有 1000 sCUR
@@ -652,10 +665,11 @@ Scenario: 用户成功正常解锁
   And  锁仓已到期（时间已过 30 天）
   When 用户 alice 调用 unlock()
   Then 用户 alice 的锁仓状态变为未锁仓
-  And  totalLocked 减少 1000
+  And  veCURLock 的 totalLocked 减少 1000
   And  触发 Unlocked(alice, 1000) 事件
-  And  incentiveGauge.executeUnlock 被调用，传入 (alice, 1000, bonusFactor)
-  And  NFT 绑定被释放（如果有）
+  And  incentiveGauge.executeUnlock(alice) 被调用
+  And  gauge 中 alice 的权重重置为 userInfo.amount × 1.0e18 / PRECISION
+  And  触发 UnlockExecuted(alice) 事件
 
 Scenario: 用户尝试在锁仓到期前正常解锁
   Given 用户 alice 已锁仓 1000 sCUR 30 天
@@ -667,20 +681,27 @@ Scenario: 用户未锁仓时调用解锁
   Given 用户 alice 没有锁仓
   When 用户 alice 调用 unlock()
   Then 交易回滚，错误 NotLocked
-
 ```
 ### 6.7 提前解锁（earlyUnlock）
 
 ```gherkin
 Scenario: 用户成功提前解锁（产生惩罚）
   Given 用户 alice 已锁仓 1000 sCUR 30 天
-  And  锁仓已过 15 天
+  And  锁仓已过 15 天（剩余 15 天）
+  And  用户 alice 已绑定 NFT
   When 用户 alice 调用 earlyUnlock()
   Then 用户 alice 的锁仓状态变为未锁仓
-  And  totalLocked 减少 1000
-  And  计算惩罚金额
-  And  触发 EarlyUnlocked(alice, 1000, penalty) 事件
-  And  incentiveGauge.executeEarlyUnlock 被调用，传入 (alice, 1000, bonusFactor, penalty)
+  And  veCURLock 的 totalLocked 减少 1000
+  And  惩罚金额 = 1000 × 50% × (15/30) = 250 sCUR
+  And  触发 EarlyUnlocked(alice, 1000, 250) 事件
+  And  incentiveGauge.executeEarlyUnlock(alice, 250) 被调用
+  And  gauge 中 alice 的 depositedGauge 减少 250
+  And  gauge 中 alice 的 pendingRewards 被清零并转入 RevenueRebatePool
+  And  gauge 调用 sCUR.burnGaugePenalty(250)，烧掉 gauge 的 250 sCUR
+  And  CURStaking 将等值 CUR 转入 RevenueRebatePool
+  And  gauge 中 alice 的权重重置为 (1000 - 250) × 1.0e18 / PRECISION
+  And  用户的 NFT 绑定被解除
+  And  触发 NFTUnbound(alice, ...) 事件
 
 Scenario: 用户提前解锁时锁仓已到期
   Given 用户 alice 已锁仓 1000 sCUR 30 天
@@ -693,14 +714,19 @@ Scenario: 用户未锁仓时调用提前解锁
   When 用户 alice 调用 earlyUnlock()
   Then 交易回滚，错误 NotLocked
 
-Scenario: 惩罚金额计算正确
+Scenario: 惩罚金额计算正确（过半）
   Given 用户 alice 锁仓 1000 sCUR 30 天
   And  锁仓剩余 15 天
   When 用户 alice 调用 earlyUnlock()
   Then 惩罚金额 = 1000 × 50% × (15/30) = 250 sCUR
+
+Scenario: 惩罚金额接近 0（到期前 1 秒）
+  Given 用户 alice 锁仓 1000 sCUR 30 天
+  And  锁仓剩余 1 秒
+  When 用户 alice 调用 earlyUnlock()
+  Then 惩罚金额 ≈ 0
+  And  不调用 burnGaugePenalty（penalty == 0）
 ```
-
-
 
 
 ### 6.8 领取奖励（GetReward）
@@ -735,163 +761,189 @@ Scenario: 多个用户分别领取奖励
   Then 用户 alice 收到 100 CUR
   And  用户 bob 收到 200 CUR
 ```
+
+### 6.9 存入矿池(deposit)
+
+```gherkin
+Scenario: CURStaking 成功调用 deposit
+  Given 用户 alice 已质押 1000 CUR
+  And  用户 alice 已通过 enterGauge 将 600 sCUR 转入 gauge
+  When CURStaking 调用 gauge.deposit(alice, 600)
+  Then gauge 中 alice 的 userInfo.amount = 600
+  And  gauge 的 totalWeight 增加 600 × bonus / PRECISION
+  And  触发 Deposit(alice, 600) 事件
+
+Scenario: 非 CURStaking 调用 deposit
+  Given 用户 alice 尝试直接调用 gauge.deposit(alice, 600)
+  When alice 调用 deposit(alice, 600)
+  Then 交易回滚，错误 Unauthorized
+
+Scenario: deposit 数量为 0
+  Given CURStaking 调用 gauge.deposit(alice, 0)
+  Then 交易回滚，错误 ZeroAmount
+
+Scenario: 用户已锁仓，deposit 后权重按 bonus 计算
+  Given 用户 alice 已锁仓 30 天（bonus = 1.15e18）
+  And  gauge 中 alice 的 userInfo.amount = 0
+  When CURStaking 调用 gauge.deposit(alice, 1000)
+  Then gauge 中 alice 的 userInfo.amount = 1000
+  And  gauge 中 alice 的权重 = 1000 × 1.15e18 / PRECISION = 1150
+
+Scenario: 用户未锁仓，deposit 后权重按 1.0x 计算
+  Given 用户 alice 未锁仓（bonus = 1.0e18）
+  When CURStaking 调用 gauge.deposit(alice, 1000)
+  Then gauge 中 alice 的 userInfo.amount = 1000
+  And  gauge 中 alice 的权重 = 1000
+
+Scenario: 用户多次 deposit
+  Given 用户 alice 已质押 1000 CUR
+  When CURStaking 调用 gauge.deposit(alice, 400)
+  And  CURStaking 调用 gauge.deposit(alice, 300)
+  Then gauge 中 alice 的 userInfo.amount = 700
+
+Scenario: deposit 时结算历史奖励
+  Given 用户 alice 在 gauge 中有 1000 sCUR
+  And  时间过去 100 天，产生奖励
+  When CURStaking 调用 gauge.deposit(alice, 500)
+  Then alice 的历史奖励被结算到 pendingRewards
+  And  alice 的 userInfo.amount 增加 500
+
+Scenario: deposit 时刷新闲置奖励
+  Given gauge 的 accumulatedIdleRewards > 0
+  When CURStaking 调用 gauge.deposit(alice, 1000)
+  Then accumulatedIdleRewards 被转入 revenueRebatePool
+  And  触发 IdleRewardsFlushed 事件
+
+Scenario: 合约暂停时 deposit
+  Given gauge 已暂停
+  When CURStaking 调用 gauge.deposit(alice, 1000)
+  Then 交易回滚（whenNotPaused 拦截）
+  ```
+### 6.10 从矿池取出(withdraw)
+
+```gherkin
+Scenario: CURStaking 成功调用 withdraw
+  Given 用户 alice 在 gauge 中有 600 sCUR
+  When CURStaking 调用 gauge.withdraw(alice, 600)
+  Then gauge 中 alice 的 userInfo.amount = 0
+  And  600 sCUR 从 gauge 转回 alice
+  And  gauge 的 totalWeight 减少 600 × bonus / PRECISION
+  And  触发 Withdraw(alice, 600) 事件
+
+Scenario: 非 CURStaking 调用 withdraw
+  Given 用户 alice 尝试直接调用 gauge.withdraw(alice, 600)
+  When alice 调用 withdraw(alice, 600)
+  Then 交易回滚，错误 Unauthorized
+
+Scenario: withdraw 数量为 0
+  Given CURStaking 调用 gauge.withdraw(alice, 0)
+  Then 交易回滚，错误 ZeroAmount
+
+Scenario: withdraw 数量超过用户余额
+  Given 用户 alice 在 gauge 中有 600 sCUR
+  When CURStaking 调用 gauge.withdraw(alice, 800)
+  Then 交易回滚，错误 InsufficientAmount
+
+Scenario: 用户部分 withdraw
+  Given 用户 alice 在 gauge 中有 600 sCUR
+  When CURStaking 调用 gauge.withdraw(alice, 250)
+  Then gauge 中 alice 的 userInfo.amount = 350
+  And  250 sCUR 从 gauge 转回 alice
+
+Scenario: withdraw 后权重正确更新
+  Given 用户 alice 在 gauge 中有 1000 sCUR，bonus = 1.15e18，权重 = 1150
+  When CURStaking 调用 gauge.withdraw(alice, 500)
+  Then gauge 中 alice 的 userInfo.amount = 500
+  And  gauge 中 alice 的权重 = 500 × 1.15e18 / PRECISION = 575
+
+Scenario: withdraw 时结算历史奖励
+  Given 用户 alice 在 gauge 中有 1000 sCUR
+  And  时间过去 100 天，产生奖励
+  When CURStaking 调用 gauge.withdraw(alice, 500)
+  Then alice 的历史奖励被结算到 pendingRewards
+  And  alice 的 userInfo.amount 减少 500
+
+Scenario: withdraw 时刷新闲置奖励
+  Given gauge 的 accumulatedIdleRewards > 0
+  When CURStaking 调用 gauge.withdraw(alice, 1000)
+  Then accumulatedIdleRewards 被转入 revenueRebatePool
+  And  触发 IdleRewardsFlushed 事件
+
+Scenario: 合约暂停时 withdraw
+  Given gauge 已暂停
+  When CURStaking 调用 gauge.withdraw(alice, 1000)
+  Then 交易回滚（whenNotPaused 拦截）
+```
+
+### 6.11 领取空投（Claim）
+
+```gherkin
+Scenario: 白名单用户成功领取空投
+  Given 用户 alice 在白名单中
+  And  用户 alice 未领取过空投
+  And  Airdrop 合约有 ≥ 1000 CUR 余额
+  And  合约未暂停
+  When 用户 alice 调用 claim()
+  Then 用户 alice 收到 1000 CUR
+  And  用户 alice 的 hasClaimed = true
+  And  totalClaimed 增加 1000 CUR
+  And  totalRecipients 增加 1
+  And  触发 Claimed(alice, 1000) 事件
+
+Scenario: 非白名单用户领取
+  Given 用户 bob 不在白名单中
+  When 用户 bob 调用 claim()
+  Then 交易回滚，错误 NotWhitelisted
+
+Scenario: 用户重复领取
+  Given 用户 alice 已领取过空投
+  When 用户 alice 再次调用 claim()
+  Then 交易回滚，错误 AlreadyClaimed
+
+Scenario: 合约 CUR 余额不足
+  Given Airdrop 合约 CUR 余额 < 1000
+  And  用户 alice 在白名单中
+  When 用户 alice 调用 claim()
+  Then 交易回滚，错误 InsufficientBalance
+
+Scenario: 合约暂停时领取
+  Given 合约已暂停
+  And  用户 alice 在白名单中
+  When 用户 alice 调用 claim()
+  Then 交易回滚（whenNotPaused 拦截）
+
+Scenario: Owner 添加单个白名单
+  Given 用户 alice 不在白名单中
+  When Owner 调用 addToWhitelist(alice)
+  Then isWhitelisted[alice] = true
+  And  触发 AddToWhitelist(alice) 事件
+
+Scenario: Owner 批量添加白名单
+  Given alice、bob、charlie 都不在白名单中
+  When Owner 调用 addWhitelist([alice, bob, charlie])
+  Then 三人 isWhitelisted = true
+  And  触发 AddWhitelist([alice, bob, charlie]) 事件
+
+Scenario: Owner 移除白名单
+  Given 用户 alice 在白名单中
+  When Owner 调用 removeFromWhitelist(alice)
+  Then isWhitelisted[alice] = false
+  And  触发 RemoveFromWhitelist(alice) 事件
+
+Scenario: Owner 存入 CUR
+  Given Owner 有 10000 CUR 并已 approve
+  When Owner 调用 deposit(10000)
+  Then 合约 CUR 余额增加 10000
+  And  触发 Deposited(10000) 事件
+```
 ---
 
-## 7.数据结构
 
-### 7.1 CURStaking 
+## 7. 业务规则与公式
 
-**用户信息**
+### 7.1 sCUR 兑换率公式
 
-```solidity
-struct UserInfo {
-    uint256 stakedSCUR;     // 用户持有的 sCUR 总量
-    uint256 depositedGauge; // 用户在矿池中的 sCUR 数量
-}
-mapping(address => UserInfo) public users;
-```
-
-### 7.2 IncentiveGauge 
-
-**用户信息**
-
-```solidity
-struct UserInfo {
-    uint256 amount;                 // 用户质押的 sCUR 数量
-    uint256 weight;                 // 用户加权权重
-    uint256 rewardPerTokenPaid;     // 用户上次记录的奖励指数
-    uint256 pendingRewards;         // 待领取奖励
-}
-mapping(address => UserInfo) public users;
-```
-
-**全局状态**
-
-```solidity
-uint256 public startTime;           // 合约部署时间
-uint256 public rewardPerToken;      // 累计奖励指数
-uint256 public lastUpdateTime;      // 上次更新时间
-uint256 public emissionRate;        // 当前释放速率
-uint256 public totalWeight;         // 全网总权重
-```
-
-**通胀释放常量**
-
-```solidity
-uint256 public constant EMISSION_RATE_Y1 = (15_000_000 * 1e18) / SECONDS_PER_YEAR;
-uint256 public constant EMISSION_RATE_Y2 = (12_000_000 * 1e18) / SECONDS_PER_YEAR;
-uint256 public constant EMISSION_RATE_Y3 = (8_000_000 * 1e18) / SECONDS_PER_YEAR;
-uint256 public constant EMISSION_RATE_Y4 = (5_000_000 * 1e18) / SECONDS_PER_YEAR;
-```
-
-
-### 7.3 veCURLock
-
-**锁仓信息**
-
-```solidity
-struct LockInfo {
-    uint256 amount;         // 锁仓的 sCUR 数量
-    uint256 startTime;      // 开始时间
-    uint256 endTime;        // 结束时间
-    uint256 duration;       // 锁仓时长
-    uint256 bonusFactor;    // 加成系数
-    bool isLocked;          // 是否在锁仓中
-}
-mapping(address => LockInfo) public locks;
-```
-
-**NFT 绑定信息**
-
-```solidity
-struct NFTBinding {
-    address nftContract;    // NFT 合约地址
-    uint256 tokenId;        // NFT ID
-    uint8 tier;             // NFT 等级
-    bool isBound;           // 是否绑定
-}
-mapping(address => NFTBinding) public nftBindings;
-mapping(address => mapping(uint256 => bool)) public isNFTBound;
-```
-
-**锁仓时间与加成系数**
-
-```solidity
-// 锁仓时长常量
-uint256 public constant DURATION_30 = 30 days;
-uint256 public constant DURATION_90 = 90 days;
-uint256 public constant DURATION_180 = 180 days;
-uint256 public constant DURATION_365 = 365 days;
-uint256 public constant DURATION_730 = 730 days;
-
-// 加成系数常量
-uint256 public constant BONUS_30 = 1.15se18;
-uint256 public constant BONUS_90 = 1.35e18;
-uint256 public constant BONUS_180 = 1.65e18;
-uint256 public constant BONUS_365 = 2.00e18;
-uint256 public constant BONUS_730 = 2.50e18;
-```
-
-### 7.4 NFTChecker
-
-**数据结构**
-
-```solidity
-struct UserBinding {
-  address nftContract;
-  uint256 tokenId;
-  uint8 tier;
-  uint256 bindTime;
-  bool isBound;
-}
-mapping(address => bool) public whitelistedContracts;
-mapping(address => uint8) public contractTiers;
-mapping(address => UserBinding) public userBindings;
-mapping(address => mapping(uint256 => bool)) public nftBound;
-address[] public whitelistedContractsList;
-```
-
-**常量**
-
-```solidity
-uint8 public constant TIER_NONE = 0;
-uint8 public constant TIER_MID = 1;
-uint8 public constant TIER_HIGH = 2;
-```
-
-
-### 7.5 RevenueRebatePool
-
-**状态变量**
-
-```solidity
-uint256 public totalRevenue;    // 累计待注入收入
-uint256 public threshold;       // 自动注入阈值
-```
-
-### 7.6 sCUR 核心状态
-
-```solidity
-uint256 public currentExchangeRate;  // 当前汇率
-uint256 public totalUnderlying;      // 底层 CUR 总量
-mapping(address => bool) public minters;  // 授权铸造者
-```
-
-### 7.7 精度常数（通用）
-
-```solidity
-uint256 public constant PRECISION = 1e18;           // 固定点运算精度
-uint256 public constant PENALTY_RATE = 5000;        // 惩罚率 50%
-uint256 public constant SECONDS_PER_YEAR = 365 days; // 一年秒数
-```
-
----
-
-## 8. 业务规则与公式
-
-### 8.1 sCUR 兑换率公式
-
-#### 8.1.1 当前兑换率
+#### 7.1.1 当前兑换率
 
 $$
 exchangeRate = \frac{totalUnderlying \times PRECISION}{totalSupply(sCUR)}
@@ -901,12 +953,12 @@ $$
 
 | 参数 | 说明 |
 |------|------|
-| `totalUnderlying` | sCUR 合约记录的底层 CUR 价值总量，用于兑换率计算 |
+| `totalUnderlying` | sCUR 合约记录的底层 CUR 支撑资产数量，用于兑换率计算 |
 | `totalSupply(sCUR)` | sCUR 总供应量 |
 | `PRECISION` | 精度常数（1e18） |
 
 
-#### 8.1.2 Stake（质押）
+#### 7.1.2 Stake（质押）
 
 用户质押 CUR 时：
 
@@ -914,7 +966,7 @@ $$
 sCURMinted = \frac{CURAmount \times PRECISION}{exchangeRate}
 $$
 
-#### 8.1.3 Unstake（赎回）
+#### 7.1.3 Unstake（赎回）
 
 用户赎回时：
 
@@ -922,15 +974,14 @@ $$
 CURReturned = \frac{sCURAmount \times exchangeRate}{PRECISION}
 $$
 
-#### 8.1.4 兑换率增长
 
-#### 8.1.4 兑换率增长
+#### 7.1.4 兑换率增长
 
 当 RevenueRebatePool 将收益 CUR 注入协议时：
 
 1. RevenueRebatePool 将真实 CUR 转入 CURStaking。
 2. CURStaking 的实际 CUR 资产增加。
-3. 调用 sCURToken.updateExchangeRate(amount)。
+3. RevenueRebatePool 调用 sCURToken.updateExchangeRate(amount)。
 4. sCUR 的 totalUnderlying 增加 amount。
 5. sCUR 总供应量保持不变。
 6. exchangeRate 相应提高。
@@ -939,9 +990,10 @@ $$
 
 - CUR 的实际资产始终由 CURStaking 持有。
 - sCUR 仅更新底层资产 accounting，不接收真实 CUR。
-- 在 totalSupply(sCUR) > 0 的情况下，正常收益注入不会降低 exchangeRate。
+- 在 totalSupply(sCUR) == 0 时，updateExchangeRate 会 revert NoSupply。
+- 在 totalSupply(sCUR) > 0 时，汇率单调不减（newRate >= oldRate，否则 revert ExchangeRateCannotDecrease）。
 
-#### 8.1.5 底层资产流转
+#### 7.1.5 底层资产流转
 
 用户 Stake：
 
@@ -960,9 +1012,7 @@ Revenue 注入：
 
 RevenueRebatePool
   │
-  │ CUR
-  ▼
-CURStaking
+  │ CUR → CURStaking（transfer）
   │
   │ updateExchangeRate(amount)
   ▼
@@ -990,11 +1040,11 @@ CURStaking
   ▼
 用户
 
-### 8.2 用户权重公式
+### 7.2 用户权重公式
 
-#### 8.2.1 基础权重（进入矿池）
+#### 7.2.1 基础权重
 
-用户进入 IncentiveGauge 后：
+用户进入 IncentiveGauge 后（未锁仓时）：
 
 $$
 BaseWeight = GaugeAmount
@@ -1003,7 +1053,7 @@ $$
 即：`1 sCUR = 1 Weight`
 
 
-#### 8.2.2 锁仓加成权重
+#### 7.2.2 锁仓加成权重
 
 用户锁仓后：
 
@@ -1033,7 +1083,7 @@ Weight &= 1000 \times 1.65 = 1650
 $$
 
 
-#### 8.2.3 全网总权重
+#### 7.2.3 全网总权重
 
 $$
 TotalWeight = \sum_{i} Weight_i
@@ -1045,7 +1095,7 @@ $$
 IncentiveGauge.totalWeight
 ```
 
-### 8.3 奖励释放公式
+### 7.3 奖励释放公式
 
 协议采用固定排放模型：
 
@@ -1077,7 +1127,7 @@ $$
 其中 `365 × 24 × 3600 = 31,536,000` 秒（一年的秒数）
 
 
-### 8.4 Reward Per Token 模型
+### 7.4 Reward Per Token 模型
 
 **全局奖励指数：**
 
@@ -1105,7 +1155,7 @@ $$
 
 
 
-### 8.5 用户奖励公式
+### 7.5 用户奖励公式
 
 **用户奖励：**
 
@@ -1138,7 +1188,7 @@ curToken.transfer(msg.sender, reward);
 ```
 
 
-### 8.6 提前解锁罚没公式
+### 7.6 提前解锁罚没公式
 
 **剩余锁仓比例：**
 
@@ -1167,7 +1217,7 @@ $$
 使用 `5000` 表示 `50\%`（因为 `5000 / 10000 = 50\%`）：
 
 
-### 8.7 提前解锁后的权重重置
+### 7.7 提前解锁后的权重重置
 
 **提前解锁后：**
 
@@ -1188,9 +1238,7 @@ $$
 RemainingGaugeAmount = GaugeAmount - Penalty
 $$
 
-
-
-### 8.8 奖励罚没规则
+### 7.8 奖励罚没规则
 
 提前解锁时：
 
@@ -1210,117 +1258,57 @@ $$
 curToken.transfer(address(revenueRebatePool), pendingReward);
 ```
 
+# 8. 非功能需求
 
-## 9. 非功能需求
-### 9.1 安全要求
+## 8.1 安全要求
 
-| 要求  |  实现方式 |
-| ------------ | ------------ |
-|  防重入攻击 |  `ReentrancyGuard` |
-|  权限控制 | `Ownable`, `onlyMinter`  |
-|  紧急暂停 | `Pausable`  |
-|  防时间操纵 | `rewardPerToken` 累积模型  |
-|  防除零错误  | 条件判断 + 精度处理  |
+| 要求 | 说明 |
+|---|---|
+| 防重入攻击 | 所有涉及外部调用的函数具备防重入能力 |
+| 权限控制 | 敏感操作（铸币、暂停、参数调整）严格权限控制 |
+| 紧急暂停 | 检测到异常时可暂停关键操作，但允许用户紧急提取本金 |
+| 防时间操纵 | 奖励分配基于累积模型，不依赖单次时间点 |
+| 防除零错误 | 所有除法运算确保分母非零 |
 
----
+## 8.2 可用性要求
 
-## 10. 边界条件与异常处理
+| 要求 | 说明 |
+|---|---|
+| 可暂停 | 合约可被 Owner 暂停，暂停期间停止铸币、奖励分发 |
+| 紧急提取 | 暂停期间允许用户通过 `emergencyWithdraw` 提取本金，未领取奖励清零 |
+| 可恢复 | 暂停后可恢复，恢复后功能正常 |
+| 多签控制 | 关键权限由多签钱包 + Timelock 控制 |
 
-### 10.1 错误类型汇总
+**紧急提取规则**：
 
-| 错误类型 | 触发场景 | 处理方式 |
-|---------|---------|---------|
-| `ZeroAmount` | 输入数量为 0 | `revert` |
-| `ZeroAddress` | 传入零地址 | `revert` |
-| `InsufficientAmount` | 余额不足 | `revert` |
-| `InsufficientFreeSCUR` | 赎回矿池中的 sCUR | `revert` |
-| `InsufficientBalance` | 合约 CUR 余额不足 | `revert` |
-| `Unauthorized` | 非授权合约调用 | `revert` |
-| `InsufficientWeight` | 权重不足 | `revert` |
-| `ZeroReward` | 无奖励可领取 | `revert` |
-| `InvalidDuration` | 锁仓时长无效 | `revert` |
-| `AlreadyLocked` | 重复锁仓 | `revert` |
-| `DurationExceedsPermission` | 锁仓超出 NFT 权限 | `revert` |
-| `NotLocked` | 未锁仓时调用解锁 | `revert` |
-| `AlreadyExpired` | 已到期时调用提前解锁 | `revert` |
-| `NotExpired` | 未到期时调用正常解锁 | `revert` |
-| `NotBound` | 未绑定 NFT 时调用解绑 | `revert` |
-| `AlreadyBound` | NFT 已被绑定时再次绑定 | `revert` |、
+| 项目 | 说明 |
+|---|---|
+| 触发条件 | 合约处于暂停状态（`whenPaused`） |
+| 用户操作 | `CURStaking.emergencyWithdraw()` |
+| 提取内容 | 矿池中的 sCUR + 钱包中的 sCUR，全部赎回为 CUR |
+| 奖励处理 | 未领取奖励全部清零（放弃） |
+| 触发事件 | `EmergencyWithdrawn(user, totalSCUR, CURAmount)` |
 
-### 10.2 数值边界
+## 8.3 可扩展性要求
 
-| 边界类型 | 最小值 | 最大值 | 说明 |
-|---------|-------|-------|------|
-| 锁仓时长 | 30 days | 730 days | 超出范围 `InvalidDuration` |
-| 质押金额 | > 0 | 用户余额 | 零金额 `ZeroAmount` |
-| 赎回数量 | > 0 | 可用 sCUR | 零金额 `ZeroAmount`，超额  `InsufficientFreeSCUR` |
-| 加成系数 | 1.0x | 2.5x | 由锁仓时长决定 |
-| 惩罚比例 | 0% | 50% | 按剩余时间线性计算 |
+| 要求 | 说明 |
+|---|---|
+| 多重奖励支持 | 架构上支持未来扩展分发生态合作伙伴的代币 |
+| NFT 白名单可扩展 | 支持动态添加/移除 NFT 白名单 |
+| 参数可调整 | 敏感参数（如 NFT 白名单）经时间锁调整 |
 
+## 8.4 合规与治理要求
 
+| 要求 | 说明 |
+|---|---|
+| 时间锁延迟 | 敏感参数调整需经过3 天时间锁公示期 |
+| 不可篡改项 | 释放速率按预设 4 年计划执行，不可通过治理修改 |
+| 所有权移交 | 部署后将所有权移交给 Timelock，由多签管理 |
 
-## 11. 集成与依赖
+## 8.5 性能与体验要求
 
-### 11.1 核心合约依赖
-
-| 合约 | 依赖关系 | 说明 |
-|------|----------|------|
-| CURStaking.sol | sCURToken, CURToken, IncentiveGauge, veCURLock，RevenueRebatePool | 管理 CUR <-> sCUR 兑换、流动性托管，以及用户加权质押份额 |
-| IncentiveGauge.sol | CURStaking, veCURLock, sCURToken, RevenueRebatePool | 用户将 sCUR 质押到矿池，计算加权份额和分发 CUR 通胀奖励 |
-| veCURLock.sol | IncentiveGauge, NFTChecker | 管理锁仓加成系数和提前解锁惩罚指令，并通知 IncentiveGauge 更新用户状态 |
-| NFTChecker.sol | veCURLock | 验证用户 NFT 权限，解锁不同锁仓时长 |
-| RevenueRebatePool.sol | CURStaking, IncentiveGauge，sCURToken | 接收协议收入和罚没资金，并将收益 CUR 注入 CURStaking，同时更新 sCUR 底层资产 accounting 和兑换率 |
-
-### 11.2 模块交互流程
-
-1. 用户调用 CURStaking.stake() 质押 CUR，获得 sCUR。
-2. 用户将 sCUR 存入 IncentiveGauge.deposit()，矿池记录加权份额。
-3. veCURLock.lock() 可对质押的 sCUR 进行锁仓，返回加权系数。
-4. 用户的加权份额用于 IncentiveGauge 的奖励分配计算，但不改变协议实际释放的基础奖励规模。
-5. 提前解锁 veCURLock.earlyUnlock() 会触发 IncentiveGauge 执行本金罚没和奖励没收。
-6. NFTChecker 提供锁仓权限验证，决定最大可锁仓时长。
-7. RevenueRebatePool 将协议收入或罚没形成的 CUR 转入 CURStaking，并调用 sCURToken.updateExchangeRate() 更新 sCUR 的底层资产 accounting，从而提升 sCUR 汇率。
-
-### 11.3 sCUR 冻结规则
-
-- 存入 IncentiveGauge 的 sCUR 会被冻结，不可转账，直到用户退出矿池。
-- veCURLock 锁仓的 sCUR 对应的加权份额仅影响奖励计算，不直接增加 sCUR 可用余额。
-- 提前解锁会触发部分 sCUR 销毁（罚没）并释放剩余 sCUR。
-
-### 11.4 外部依赖
-
-| 依赖项 | 版本 | 用途 |
-|--------|------|------|
-| OpenZeppelin Contracts | v5.5.0 | ERC20、Ownable、Pausable、ReentrancyGuard |
-| Foundry Forge Std | latest | 测试框架 |
-
-### 11.5 部署顺序
-
-| 顺序 | 合约 | 依赖 |
-|--------|------|------|
-| 1 | CURToken | 无|
-| 2 | sCUR | CURToken |
-| 3 | NFTChecker | 无 |
-| 4 | RevenueRebatePool | CURToken, sCUR |
-| 5 | CURStaking | CURToken, sCUR，RevenueRebatePool |
-| 6 | 设置 sCUR 的 minter 为 CURStaking |  ——  |
-| 7 | veCURLock | CURStaking, NFTChecker, IncentiveGauge |
-| 8 | IncentiveGauge | CURToken, sCUR, CURStaking, veCURLock, RevenueRebatePool |
-| 9 | 设置 CURStaking 的 gauge 和 veLock |  ——  |
-| 10 | 设置 veCURLock 的 incentiveGauge |  —— |
-| 11 | 设置 IncentiveGauge 的 revenueRebatePool |  —— |
-| 12 | 设置 RevenueRebatePool 的 curStaking |  —— |
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+| 要求 | 说明 |
+|---|---|
+| Gas 优化 | 关键操作在合理 gas 范围内 |
+| 透明度| 所有关键操作有事件记录，便于链下追踪 |
+| 用户可查 | 用户可查询待领取奖励、锁仓状态、加成系数 |

@@ -5,7 +5,6 @@ pragma solidity ^0.8.28;
 import "forge-std/Test.sol";
 import "../src/core/CURToken.sol";
 import "../src/core/sCUR.sol";
-import "../src/core/CURStaking.sol";
 import "../src/modules/veCURLock.sol";
 import "../src/modules/NFTChecker.sol";
 
@@ -17,6 +16,8 @@ contract MockIncentiveGauge {
     address public lastUser;
     uint256 public lastPenalty;
 
+    mapping(address => uint256) public userAmounts;
+
     error Unauthorized();
 
     modifier onlyVeLock() {
@@ -26,6 +27,14 @@ contract MockIncentiveGauge {
 
     function setVeLock(address _veLock) external {
         veLock = _veLock;
+    }
+
+    function setUserAmount(address user, uint256 amount) external {
+        userAmounts[user] = amount;
+    }
+
+    function getUserAmount(address user) external view returns (uint256) {
+        return userAmounts[user];
     }
 
     function executeLock(address user) external onlyVeLock {
@@ -70,33 +79,25 @@ contract MockNFTChecker {
         return userBindings[user].isBound;
     }
 
+    function getUserTier(address user) external view returns (uint8) {
+        if (!userBindings[user].isBound) return 0;
+        return userBindings[user].tier;
+    }
+
     function getNFTTier(address nftContract) external view returns (uint8) {
         return contractTiers[nftContract];
     }
 
-    function unbindNFT(address user) external {
+    function unbindNFTFor(address user) external {
         delete userBindings[user];
     }
 }
 
-// Mock CURStaking for testing
-contract MockCURStaking {
-    mapping(address => uint256) public depositedGauge;
-
-    function setUserGaugeBalance(address user, uint256 amount) external {
-        depositedGauge[user] += amount;
-    }
-
-    function getUserInfo(address user) external view returns (uint256, uint256) {
-        return (0, depositedGauge[user]);
-    }
-}
 
 contract veCURLockTest is Test {
     veCURLock public veLock;
     CURToken public curToken;
     sCUR public sCURToken;
-    MockCURStaking public curStake;
     MockNFTChecker public nftChecker;
     MockIncentiveGauge public incentiveGauge;
 
@@ -125,10 +126,8 @@ contract veCURLockTest is Test {
     event Locked(address indexed user, uint256 duration, uint256 bonusFactor, uint256 endTime);
     event Unlocked(address indexed user, uint256 amount);
     event EarlyUnlocked(address indexed user, uint256 amount, uint256 penalty);
-    event NFTBound(address indexed user, address indexed nftContract, uint256 tokenId, uint8 tier);
-    event NFTUnbound(address indexed user, address indexed nftContract, uint256 tokenId, uint8 tier);
-    event NFTCheckerUpdated(address indexed newChecker);
-    event IncentiveGaugeUpdated(address indexed newGauge);
+    event IncentiveGaugeUpdated(address indexed oldGauge, address indexed newGauge);
+
 
     // ============================================
     // Setup
@@ -137,12 +136,11 @@ contract veCURLockTest is Test {
         vm.startPrank(owner);
 
         curToken = new CURToken();
-        sCURToken = new sCUR(address(curToken));
-        curStake = new MockCURStaking();
+        sCURToken = new sCUR(address(curToken), address(0));
         nftChecker = new MockNFTChecker();
         incentiveGauge = new MockIncentiveGauge();
 
-        veLock = new veCURLock(address(sCURToken), address(curStake), address(nftChecker), address(incentiveGauge));
+        veLock = new veCURLock(address(sCURToken), address(nftChecker), address(incentiveGauge));
 
         incentiveGauge.setVeLock(address(veLock));
 
@@ -154,8 +152,6 @@ contract veCURLockTest is Test {
 
         sCURToken.mint(alice, 5000 * 1e18);
 
-        vm.prank(alice);
-        sCURToken.approve(address(veLock), type(uint256).max);
     }
 
     // ============================================
@@ -164,7 +160,6 @@ contract veCURLockTest is Test {
 
     function test_Constructor_SetsCorrectState() public view {
         assertEq(address(veLock.sCURToken()), address(sCURToken));
-        assertEq(address(veLock.curStake()), address(curStake));
         assertEq(address(veLock.nftChecker()), address(nftChecker));
         assertEq(address(veLock.incentiveGauge()), address(incentiveGauge));
         assertEq(veLock.owner(), owner);
@@ -174,28 +169,22 @@ contract veCURLockTest is Test {
     function test_Constructor_SCURTokenZero() public {
         vm.prank(owner);
         vm.expectRevert(veCURLock.ZeroAddress.selector);
-        new veCURLock(address(0), address(curStake), address(nftChecker), address(incentiveGauge));
+        new veCURLock(address(0), address(nftChecker), address(incentiveGauge));
     }
 
-    function test_Constructor_CurStakeZero() public {
-        vm.prank(owner);
-        vm.expectRevert(veCURLock.ZeroAddress.selector);
-        new veCURLock(address(sCURToken), address(0), address(nftChecker), address(incentiveGauge));
-    }
-
+   
     function test_Constructor_NFTCheckerZero() public {
         vm.prank(owner);
         vm.expectRevert(veCURLock.ZeroAddress.selector);
-        new veCURLock(address(sCURToken), address(curStake), address(0), address(incentiveGauge));
+        new veCURLock(address(sCURToken), address(0), address(incentiveGauge));
     }
 
     function test_Constructor_AllowsIncentiveGaugeZero() public {
         vm.prank(owner);
 
-        veCURLock newVeLock = new veCURLock(address(sCURToken), address(curStake), address(nftChecker), address(0));
+        veCURLock newVeLock = new veCURLock(address(sCURToken), address(nftChecker), address(0));
 
         assertEq(address(newVeLock.sCURToken()), address(sCURToken));
-        assertEq(address(newVeLock.curStake()), address(curStake));
         assertEq(address(newVeLock.nftChecker()), address(nftChecker));
         assertEq(address(newVeLock.incentiveGauge()), address(0));
         assertEq(newVeLock.owner(), owner);
@@ -242,7 +231,7 @@ contract veCURLockTest is Test {
 
     function test_Lock_30Days_Success() public {
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
@@ -261,7 +250,7 @@ contract veCURLockTest is Test {
 
     function test_Lock_90Days_Success() public {
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_90);
@@ -273,7 +262,7 @@ contract veCURLockTest is Test {
 
     function test_Lock_180Days_Success() public {
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_180);
@@ -287,13 +276,8 @@ contract veCURLockTest is Test {
         // Give alice NFT permission for 365 days
         nftChecker.setUserBinding(alice, 1);
 
-        address nftContract = address(1);
-        uint256 tokenId = 1;
-        vm.prank(alice);
-        veLock.bindNFT(nftContract, tokenId);
-
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_365);
@@ -306,13 +290,8 @@ contract veCURLockTest is Test {
     function test_Lock_730Days_WithNFTSuccess() public {
         nftChecker.setUserBinding(alice, 2);
 
-        address nftContract = address(1);
-        uint256 tokenId = 1;
-        vm.prank(alice);
-        veLock.bindNFT(nftContract, tokenId);
-
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_730);
@@ -329,9 +308,8 @@ contract veCURLockTest is Test {
     }
 
     function test_Lock_DurationExceedsPermission() public {
-        // alice has no NFT, max is 180 days
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         vm.expectRevert(veCURLock.DurationExceedsPermission.selector);
@@ -340,7 +318,7 @@ contract veCURLockTest is Test {
 
     function test_Lock_AlreadyLocked() public {
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
@@ -351,7 +329,7 @@ contract veCURLockTest is Test {
     }
 
     function test_Lock_ZeroGaugeBalance() public {
-        curStake.setUserGaugeBalance(alice, 0);
+        incentiveGauge.setUserAmount(alice, 0);
 
         vm.prank(alice);
         vm.expectRevert(veCURLock.ZeroSCUR.selector);
@@ -360,7 +338,7 @@ contract veCURLockTest is Test {
 
     function test_Lock_Event() public {
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         vm.expectEmit(true, false, false, true);
@@ -374,12 +352,11 @@ contract veCURLockTest is Test {
 
     function test_Unlock_AfterExpiry_Success() public {
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
 
-        // Warp past expiry
         vm.warp(block.timestamp + DURATION_30 + 1);
 
         vm.prank(alice);
@@ -398,7 +375,7 @@ contract veCURLockTest is Test {
 
     function test_Unlock_NotExpired() public {
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
@@ -410,7 +387,7 @@ contract veCURLockTest is Test {
 
     function test_Unlock_Event() public {
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
@@ -427,32 +404,26 @@ contract veCURLockTest is Test {
     // Penalty Calculation Tests
     // ============================================
 
-    function test_CalculatePenalty_ReturnsZeroWhenExpired() public {
+    function test_CalculatePenalty_NotLocked() public {
+        vm.expectRevert(veCURLock.NotLocked.selector);
+        veLock.calculatePenalty(alice);
+    }
+
+    function test_CalculatePenalty_AlreadyExpired() public {
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
 
-        vm.warp(block.timestamp + DURATION_30 + 1);
+  
+        vm.warp(block.timestamp + 31 days);
 
-        uint256 penalty = veLock.calculatePenalty(alice);
-
-        assertEq(penalty, 0);
+        vm.expectRevert(veCURLock.AlreadyExpired.selector);
+        veLock.calculatePenalty(alice);
     }
 
-    function test_CalculatePenalty_Formula() public pure {
-        uint256 amount = 1000 * 1e18;
-        uint256 totalTime = 30 days;
-        uint256 remaining = 15 days;
-
-        uint256 expectedPenalty = (amount * 5000 * remaining) / (10000 * totalTime);
-
-        uint256 manualPenalty = 250 * 1e18;
-
-        assertEq(expectedPenalty, manualPenalty);
-    }
-
+  
     // ============================================
     // EarlyUnlock Tests
     // ============================================
@@ -460,7 +431,7 @@ contract veCURLockTest is Test {
     function test_EarlyUnlock_Success() public {
         uint256 lockAmount = 1000 * 1e18;
 
-        curStake.setUserGaugeBalance(alice, lockAmount);
+        incentiveGauge.setUserAmount(alice, lockAmount);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
@@ -486,7 +457,7 @@ contract veCURLockTest is Test {
 
     function test_EarlyUnlock_AlreadyExpired() public {
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
@@ -498,9 +469,9 @@ contract veCURLockTest is Test {
         veLock.earlyUnlock();
     }
 
-    function test_EarlyUnlock_event() public {
+    function test_EarlyUnlock_Event() public {
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
@@ -515,103 +486,6 @@ contract veCURLockTest is Test {
         veLock.earlyUnlock();
     }
 
-    // ============================================
-    // BindNFT Tests
-    // ============================================
-    function test_BindNFT_Success() public {
-        address nftContract = address(1);
-        uint256 tokenId = 1;
-        uint8 tier = 2;
-
-        nftChecker.setUserBinding(alice, tier);
-
-        vm.prank(alice);
-        veLock.bindNFT(nftContract, tokenId);
-
-        (address boundNFT, uint256 boundTokenId, uint8 boundTier, bool isBound) = veLock.nftBindings(alice);
-
-        assertEq(boundNFT, nftContract);
-        assertEq(boundTokenId, tokenId);
-        assertEq(boundTier, uint8(tier));
-        assertTrue(isBound);
-
-        assertTrue(veLock.isNFTBound(nftContract, tokenId));
-    }
-
-    function test_BindNFT_NotOwner() public {
-        vm.prank(alice);
-        vm.expectRevert(veCURLock.NotNFTOwner.selector);
-        veLock.bindNFT(address(1), 1);
-    }
-
-    function test_BindNFT_AlreadyBound() public {
-        vm.prank(alice);
-
-        nftChecker.setUserBinding(alice, 2);
-
-        vm.prank(alice);
-        veLock.bindNFT(address(1), 1);
-
-        vm.prank(alice);
-        vm.expectRevert(veCURLock.AlreadyBound.selector);
-        veLock.bindNFT(address(1), 1);
-    }
-
-    function test_BindNFT_Event() public {
-        address nftContract = address(1);
-        uint256 tokenId = 1;
-        uint8 tier = 2;
-
-        nftChecker.setUserBinding(alice, tier);
-
-        vm.prank(alice);
-        vm.expectEmit(true, true, false, true);
-        emit NFTBound(alice, nftContract, tokenId, tier);
-        veLock.bindNFT(nftContract, tokenId);
-    }
-
-    // ============================================
-    // UnbindNFT Tests
-    // ============================================
-    function test_UnbindNFT_Success() public {
-        uint8 tier = 2;
-
-        vm.prank(alice);
-        nftChecker.setUserBinding(alice, tier);
-
-        vm.prank(alice);
-        veLock.bindNFT(address(1), 1);
-
-        vm.prank(alice);
-        veLock.unbindNFT();
-
-        (,,, bool isBound) = veLock.nftBindings(alice);
-
-        assertFalse(isBound);
-
-        assertFalse(veLock.isNFTBound(address(1), 1));
-    }
-
-    function test_UnbindNFT_NotBound() public {
-        vm.prank(alice);
-        vm.expectRevert(veCURLock.NotBound.selector);
-        veLock.unbindNFT();
-    }
-
-    function test_UnbindNFT_Event() public {
-        uint8 tier = 2;
-
-        vm.prank(alice);
-        nftChecker.setUserBinding(alice, tier);
-
-        vm.prank(alice);
-        veLock.bindNFT(address(1), 1);
-
-        vm.prank(alice);
-        vm.expectEmit(true, true, false, true);
-        emit NFTUnbound(alice, address(1), 1, tier);
-        veLock.unbindNFT();
-    }
 
     // ============================================
     // GetMaxLockDuration Tests
@@ -623,23 +497,11 @@ contract veCURLockTest is Test {
 
     function test_GetMaxLockDuration_Returns365ForIntermediateNFT() public {
         nftChecker.setUserBinding(alice, 1);
-
-        address nftContract = address(1);
-        uint256 tokenId = 1;
-        vm.prank(alice);
-        veLock.bindNFT(nftContract, tokenId);
-
         assertEq(veLock.getMaxLockDuration(alice), DURATION_365);
     }
 
     function test_GetMaxLockDuration_Returns730ForAdvancedNFT() public {
         nftChecker.setUserBinding(alice, 2);
-
-        address nftContract = address(1);
-        uint256 tokenId = 1;
-        vm.prank(alice);
-        veLock.bindNFT(nftContract, tokenId);
-
         assertEq(veLock.getMaxLockDuration(alice), DURATION_730);
     }
 
@@ -649,7 +511,7 @@ contract veCURLockTest is Test {
 
     function test_GetBonus_ReturnsBonusWhenLocked() public {
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
@@ -663,7 +525,7 @@ contract veCURLockTest is Test {
 
     function test_GetBonus_ReturnsPrecisionAfterExpiry() public {
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
@@ -679,7 +541,7 @@ contract veCURLockTest is Test {
 
     function test_GetRemainingTime_ReturnsCorrectTime() public {
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
@@ -694,7 +556,7 @@ contract veCURLockTest is Test {
 
     function test_GetRemainingTime_ReturnsZeroAfterExpiry() public {
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
@@ -709,10 +571,11 @@ contract veCURLockTest is Test {
     // ============================================
     function test_setIncentiveGauge_Success() public {
         address newIncentiveGauge = address(0x123);
+        address oldGauge = address(incentiveGauge);
 
         vm.prank(owner);
-        vm.expectEmit(true, false, false, true);
-        emit IncentiveGaugeUpdated(newIncentiveGauge);
+        vm.expectEmit(true, true, false, true);
+        emit IncentiveGaugeUpdated(oldGauge, newIncentiveGauge);
         veLock.setIncentiveGauge(newIncentiveGauge);
 
         assertEq(address(veLock.incentiveGauge()), newIncentiveGauge);
@@ -733,10 +596,11 @@ contract veCURLockTest is Test {
 
     function test_setIncentiveGauge_Event() public {
         address newIncentiveGauge = address(0x123);
+        address oldIncentiveGauge = address(incentiveGauge);
 
         vm.prank(owner);
         vm.expectEmit(true, false, false, true);
-        emit IncentiveGaugeUpdated(newIncentiveGauge);
+        emit IncentiveGaugeUpdated(oldIncentiveGauge, newIncentiveGauge);
         veLock.setIncentiveGauge(newIncentiveGauge);
     }
 
@@ -772,7 +636,7 @@ contract veCURLockTest is Test {
         veLock.pause();
 
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         vm.expectRevert();
@@ -782,7 +646,7 @@ contract veCURLockTest is Test {
     function test_Unlock_WhenPaused() public {
         uint256 amount = 1000 * 1e18;
 
-        curStake.setUserGaugeBalance(alice, amount);
+        incentiveGauge.setUserAmount(alice, amount);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
@@ -798,7 +662,7 @@ contract veCURLockTest is Test {
     function test_EarlyUnlock_WhenPaused() public {
         uint256 amount = 1000 * 1e18;
 
-        curStake.setUserGaugeBalance(alice, amount);
+        incentiveGauge.setUserAmount(alice, amount);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
@@ -811,39 +675,14 @@ contract veCURLockTest is Test {
         veLock.earlyUnlock();
     }
 
-    function test_BindNFT_WhenPaused() public {
-        vm.prank(owner);
-        veLock.pause();
-
-        vm.prank(alice);
-        vm.expectRevert();
-        veLock.bindNFT(address(1), 1);
-    }
-
-    function test_UnbindNFT_WhenPaused() public {
-        uint8 tier = 1;
-
-        vm.prank(alice);
-        nftChecker.setUserBinding(alice, tier);
-
-        vm.prank(alice);
-        veLock.bindNFT(address(1), 1);
-
-        vm.prank(owner);
-        veLock.pause();
-
-        vm.prank(alice);
-        vm.expectRevert();
-        veLock.unbindNFT();
-    }
-
+   
     // ============================================
     // Edge Cases Tests
     // ============================================
 
     function test_EdgeCase_Unlock_ExactlyAtExpiry() public {
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
@@ -859,7 +698,7 @@ contract veCURLockTest is Test {
 
     function test_EdgeCase_EarlyUnlock_With1SecondRemaining() public {
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
@@ -874,7 +713,7 @@ contract veCURLockTest is Test {
 
     function test_EdgeCase_EarlyUnlock_With0SecondsRemaining() public {
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
@@ -888,7 +727,7 @@ contract veCURLockTest is Test {
 
     function test_EdgeCase_Penalty_AtStartOfLock() public {
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
@@ -901,7 +740,7 @@ contract veCURLockTest is Test {
 
     function test_EdgeCase_Penalty_AtMidPoint() public {
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
@@ -915,7 +754,7 @@ contract veCURLockTest is Test {
 
     function test_EdgeCase_Penalty_AtEndOfLock() public {
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
@@ -929,20 +768,21 @@ contract veCURLockTest is Test {
 
     function test_EdgeCase_Penalty_AfterExpiry() public {
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
 
         vm.warp(block.timestamp + DURATION_30 + 1);
-
-        uint256 penalty = veLock.calculatePenalty(alice);
-        assertEq(penalty, 0);
+        
+        vm.expectRevert(veCURLock.AlreadyExpired.selector);
+        veLock.calculatePenalty(alice);
+   
     }
 
     function test_EdgeCase_Lock_WithMinimumAmount() public {
         uint256 minAmount = 1;
-        curStake.setUserGaugeBalance(alice, minAmount);
+        incentiveGauge.setUserAmount(alice, minAmount);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
@@ -953,7 +793,7 @@ contract veCURLockTest is Test {
     }
 
     function test_EdgeCase_Lock_WithZeroAmount() public {
-        curStake.setUserGaugeBalance(alice, 0);
+        incentiveGauge.setUserAmount(alice, 0);
 
         vm.prank(alice);
         vm.expectRevert(veCURLock.ZeroSCUR.selector);
@@ -963,7 +803,7 @@ contract veCURLockTest is Test {
     function test_EdgeCase_Lock_WithLargeAmount() public {
         uint256 largeAmount = 100_000_000 * 1e18; // 1亿 CUR
 
-        curStake.setUserGaugeBalance(alice, largeAmount);
+        incentiveGauge.setUserAmount(alice, largeAmount);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
@@ -976,13 +816,8 @@ contract veCURLockTest is Test {
     function test_EdgeCase_Lock_Exactly365Days_WithNFT() public {
         nftChecker.setUserBinding(alice, 1);
 
-        address nftContract = address(1);
-        uint256 tokenId = 1;
-        vm.prank(alice);
-        veLock.bindNFT(nftContract, tokenId);
-
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_365);
@@ -996,7 +831,7 @@ contract veCURLockTest is Test {
         uint256 invalidDuration = 366 days;
 
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         vm.expectRevert(veCURLock.InvalidDuration.selector);
@@ -1006,13 +841,8 @@ contract veCURLockTest is Test {
     function test_EdgeCase_Lock_Exactly730Days_WithAdvancedNFT() public {
         nftChecker.setUserBinding(alice, 2);
 
-        address nftContract = address(1);
-        uint256 tokenId = 1;
-        vm.prank(alice);
-        veLock.bindNFT(nftContract, tokenId);
-
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_730);
@@ -1024,7 +854,7 @@ contract veCURLockTest is Test {
 
     function test_EdgeCase_LockUnlockLock_Successive() public {
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
@@ -1034,7 +864,7 @@ contract veCURLockTest is Test {
         vm.prank(alice);
         veLock.unlock();
 
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
         vm.prank(alice);
         veLock.lock(DURATION_90);
 
@@ -1045,7 +875,7 @@ contract veCURLockTest is Test {
 
     function test_EdgeCase_EarlyUnlockTwice_Reverts() public {
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
@@ -1062,7 +892,7 @@ contract veCURLockTest is Test {
 
     function test_EdgeCase_RemainingTime_AfterVeryLongTime() public {
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
@@ -1075,7 +905,7 @@ contract veCURLockTest is Test {
 
     function test_EdgeCase_GetBonus_AfterUnlock() public {
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
@@ -1090,7 +920,7 @@ contract veCURLockTest is Test {
 
     function test_EdgeCase_GetBonus_AfterExpiry() public {
         uint256 gaugeBalance = 1000 * 1e18;
-        curStake.setUserGaugeBalance(alice, gaugeBalance);
+        incentiveGauge.setUserAmount(alice, gaugeBalance);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
@@ -1104,8 +934,8 @@ contract veCURLockTest is Test {
         uint256 gaugeBalance1 = 1000 * 1e18;
         uint256 gaugeBalance2 = 2000 * 1e18;
 
-        curStake.setUserGaugeBalance(alice, gaugeBalance1);
-        curStake.setUserGaugeBalance(bob, gaugeBalance2);
+        incentiveGauge.setUserAmount(alice, gaugeBalance1);
+        incentiveGauge.setUserAmount(bob, gaugeBalance2);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);
@@ -1160,7 +990,7 @@ contract veCURLockTest is Test {
     function test_Fuzz_LockAndUnlock(uint256 gaugeAmount) public {
         gaugeAmount = bound(gaugeAmount, 1, 10000000 * 1e18);
 
-        curStake.setUserGaugeBalance(alice, gaugeAmount);
+        incentiveGauge.setUserAmount(alice, gaugeAmount);
 
         vm.prank(alice);
         veLock.lock(DURATION_30);

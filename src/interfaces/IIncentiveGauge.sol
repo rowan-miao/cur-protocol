@@ -6,15 +6,6 @@ pragma solidity ^0.8.28;
  * @dev Interface for IncentiveGauge;
  */
 interface IIncentiveGauge {
-    event Deposit(address indexed user, uint256 amount);
-    event Withdraw(address indexed user);
-    event GetReward(address indexed user, uint256 reward);
-    event LockExecuted(address indexed user, uint256 additialWeight);
-    event UnlockExecuted(address indexed user, uint256 removeWeight);
-    event EarlyUnlockExecuted(address indexed user, uint256 penalty, uint256 removeWeight);
-    event EmergencyWithdrawn(address indexed user, uint256 amount);
-    event RewardsCleared(address indexed user, uint256 amount);
-
     function deposit(address user, uint256 amount) external;
     function withdraw(address user, uint256 amount) external;
     function getReward() external;
@@ -26,4 +17,17 @@ interface IIncentiveGauge {
     function getPendingReward(address user) external view returns (uint256);
     function getRemainingRewards() external view returns (uint256);
     function getCurrentEmissionRate() external view returns (uint256);
+    function getUserAmount(address user) external view returns (uint256);
+    function flushIdleRewards() external; 
+  
+    event Deposit(address indexed user, uint256 amount);
+    event Withdraw(address indexed user);
+    event GetReward(address indexed user, uint256 reward);
+    event LockExecuted(address indexed user);
+    event UnlockExecuted(address indexed user);
+    event EarlyUnlockExecuted(address indexed user, uint256 penalty, uint256 oldWeight, uint256 newWeight);
+    event EmergencyWithdrawn(address indexed user, uint256 amount);
+    event RewardsCleared(address indexed user, uint256 amount);
+    event IdleRewardsFlushed(uint256 amount);
+    
 }

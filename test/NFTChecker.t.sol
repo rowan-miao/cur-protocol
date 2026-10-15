@@ -33,8 +33,21 @@ contract MockERC721 {
     }
 }
 
+contract MockVeCURLock{
+    mapping(address => bool) locks;
+    function setLocked(address user, bool locked) external {
+        locks[user] = locked;
+    }
+
+    function isLocked(address user) external view returns (bool) {
+        return locks[user];
+    }
+
+}
+
 contract NFTCheckerTest is Test {
     NFTChecker public nftChecker;
+    MockVeCURLock public mockVeLock;
     MockERC721 public midNFT;
     MockERC721 public highNFT;
     MockERC721 public otherNFT;
@@ -51,14 +64,17 @@ contract NFTCheckerTest is Test {
     event ContractWhiteListed(address indexed nftContract, uint8 tier);
     event ContractRemove(address indexed nftContract);
     event NFTBound(address indexed user, address indexed nftContract, uint256 tokenId, uint8 tier);
-    event NFTUnbound(address indexed user);
+    event NFTUnbound(address indexed user, address indexed nftContract, uint256 tokenId, uint8 tier);
+    event VeLockUpdated(address indexed oldVeLock, address indexed newVeLock);
 
     // ============================================
     // Setup
     // ============================================
     function setUp() public {
         vm.startPrank(owner);
-        nftChecker = new NFTChecker();
+
+        mockVeLock = new MockVeCURLock();
+        nftChecker = new NFTChecker(address(mockVeLock));
 
         midNFT = new MockERC721("Intermediate NFT", "IMID");
         highNFT = new MockERC721("Advanced NFT", "ADV");
@@ -85,6 +101,7 @@ contract NFTCheckerTest is Test {
     }
 
     function test_Constructor_InitialState() public view {
+        assertEq(address(nftChecker.veLock()), address(mockVeLock));
         assertTrue(nftChecker.isWhitelisted(address(midNFT)));
         assertTrue(nftChecker.isWhitelisted(address(highNFT)));
         assertEq(nftChecker.getNFTTier(address(midNFT)), TIER_MID);
@@ -263,7 +280,7 @@ contract NFTCheckerTest is Test {
         (,,,, bool isBound) = nftChecker.userBindings(alice);
 
         assertFalse(isBound);
-        assertFalse(nftChecker.nftBound(address(highNFT), 2));
+        assertFalse(nftChecker.nftBound(address(highNFT), 101));
     }
 
     function test_unbindNFT_Event() public {
@@ -271,14 +288,25 @@ contract NFTCheckerTest is Test {
         nftChecker.bindNFT(address(highNFT), 101);
 
         vm.prank(alice);
-        vm.expectEmit(true, false, false, false);
-        emit NFTUnbound(alice);
+        vm.expectEmit(true, false, false, true);
+        emit NFTUnbound(alice, address(highNFT), 101, TIER_HIGH);
         nftChecker.unbindNFT();
     }
 
-    function test_unbindNFT_NoBinding() public {
+    function test_unbindNFT_NotBound() public {
         vm.prank(alice);
-        vm.expectRevert(NFTChecker.NoBinding.selector);
+        vm.expectRevert(NFTChecker.NotBound.selector);
+        nftChecker.unbindNFT();
+    }
+
+    function test_unbindNFT_whenLocked() public {
+        vm.prank(alice);
+        nftChecker.bindNFT(address(highNFT), 101);
+
+        mockVeLock.setLocked(alice, true);
+
+        vm.prank(alice);
+        vm.expectRevert(NFTChecker.PositionLocked.selector);
         nftChecker.unbindNFT();
     }
 
@@ -439,7 +467,6 @@ contract NFTCheckerTest is Test {
         vm.assume(tokenId > 0);
         vm.assume(tokenId < 10000);
 
-        // Mint a new NFT to alice
         vm.prank(owner);
         midNFT.mint(alice, tokenId);
 

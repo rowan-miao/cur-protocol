@@ -11,6 +11,7 @@ import "../src/modules/IncentiveGauge.sol";
 import "../src/modules/RevenueRebatePool.sol";
 import "../src/modules/Airdrop.sol";
 import "@openzeppelin/contracts/finance/VestingWallet.sol";
+import "@openzeppelin/contracts/governance/TimelockController.sol";
 
 contract DeployScript is Script {
     uint256 constant PRECISION = 1e18;
@@ -25,45 +26,82 @@ contract DeployScript is Script {
 
     uint256 constant TREASURY = 10_000_000 * PRECISION;
 
+    uint256 constant TIMELOCK_DELAY = 3 days;
+
     function run() public {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address owner = vm.addr(deployerPrivateKey);
-
+        
+        address deployer = vm.addr(deployerPrivateKey);
+        address multisig = vm.envAddress("MULTISIG");
+        
         address team = vm.envAddress("TEAM_ADDRESS");
         address eco = vm.envAddress("ECO_ADDRESS");
         address treasury = vm.envAddress("TREASURY_ADDRESS");
-        address dao = vm.envAddress("DAO_ADDRESS");
 
+        require(multisig != address(0), "MULTISIG is zero");
+        require(team != address(0), "TEAM_ADDRESS is zero");
+        require(eco != address(0), "ECO_ADDRESS is zero");
+        require(treasury != address(0), "TREASURY_ADDRESS is zero");
+
+        console.log("========================================");
+        console.log("CUR Protocol Deployment");
+        console.log("========================================");
+        console.log("Deployer:", deployer);
+        console.log("Multisig:", multisig);
+        
         vm.startBroadcast(deployerPrivateKey);
+
+        // ============================================
+        // Deploy TimelockController
+        // ============================================
+
+        address[] memory proposers = new address[](1);
+        proposers[0] = multisig;
+
+        address[] memory executors = new address[](1);
+        executors[0] = address(0);
+
+        TimelockController timelock = new TimelockController(
+            TIMELOCK_DELAY,
+            proposers,
+            executors,
+            deployer  
+        );
+        console.log("TimelockController:", address(timelock));
+        console.log("Timelock delay:", TIMELOCK_DELAY);
 
         CURToken curToken = new CURToken();
         console.log("CURToken:", address(curToken));
 
-        sCUR sCURToken = new sCUR(address(curToken));
+        sCUR sCURToken = new sCUR(address(curToken), address(0));
         console.log("sCUR:", address(sCURToken));
 
-        NFTChecker nftchecker = new NFTChecker();
-        console.log("NFTChecker:", address(nftchecker));
+        NFTChecker nftChecker = new NFTChecker(address(0));
+        console.log("NFTChecker:", address(nftChecker));
 
         CURStaking staking = new CURStaking(address(curToken), address(sCURToken), address(0), address(0), address(0));
         console.log("CURStaking:", address(staking));
 
-        sCURToken.addMinter(address(staking));
-        console.log("CURStaking added as minter for sCUR");
-
-        veCURLock veLock = new veCURLock(address(sCURToken), address(staking), address(nftchecker), address(0));
+        veCURLock veLock = new veCURLock(address(sCURToken), address(nftChecker), address(0));
         console.log("veCURLock:", address(veLock));
 
         RevenueRebatePool revenue = new RevenueRebatePool(address(curToken), address(sCURToken), address(staking));
         console.log("RevenueRebatePool:", address(revenue));
 
+        sCURToken.addMinter(address(revenue));
+        console.log("RevenueRebatePool added as minter for sCUR");
+        
         IncentiveGauge gauge = new IncentiveGauge(
             address(curToken), address(sCURToken), address(staking), address(veLock), address(revenue)
         );
         console.log("IncentiveGauge:", address(gauge));
 
         sCURToken.setIncentiveGauge(address(gauge));
+        sCURToken.setCurStaking(address(staking));
         console.log("sCUR dependencies set");
+
+        nftChecker.setVeLock(address(veLock));
+        console.log("NFTChecker dependencies set");
 
         staking.setGauge(address(gauge));
         staking.setVeLock(address(veLock));
@@ -73,13 +111,25 @@ contract DeployScript is Script {
         veLock.setIncentiveGauge(address(gauge));
         console.log("veCURLock dependencies set");
 
+        revenue.setGauge(address(gauge));
+        console.log("RevenueRebatePool dependencies set");
+
         Airdrop airdrop = new Airdrop(address(curToken));
         console.log("Airdrop:", address(airdrop));
 
-        uint64 start = uint64(block.timestamp + 180 days);
+        // =========================================================
+        // Deploy Team VestingWallet
+        // =========================================================
 
-        VestingWallet teamVesting = new VestingWallet(team, start, uint64(1460 days));
+        uint64 start = uint64(block.timestamp + 180 days);
+        uint64 vestingDuration = uint64(1460 days);
+
+        VestingWallet teamVesting = new VestingWallet(team, start, vestingDuration);
         console.log("TeamVesting:", address(teamVesting));
+
+        // =========================================================
+        //  CUR distribution (BEFORE ownership transfer)
+        // =========================================================
 
         curToken.transfer(address(gauge), STAKING_REWARD);
         console.log("Transferred 40M CUR to IncentiveGauge");
@@ -96,11 +146,85 @@ contract DeployScript is Script {
         curToken.transfer(treasury, TREASURY);
         console.log("Transferred 10M CUR to Treasury");
 
-        require(curToken.balanceOf(owner) == 0, "CUR distribution failed");
+        require(curToken.balanceOf(deployer) == 0, "CUR distribution failed");
         console.log("CUR distribution completed");
 
-        curToken.transferOwnership(dao);
-        console.log("CUR ownership transferred to DAO");
+        // =========================================================
+        // Transfer ownership to Timelock
+        // =========================================================
+        
+        curToken.transferOwnership(address(timelock));
+        console.log("CUR ownership -> timelock");
+
+        sCURToken.transferOwnership(address(timelock));
+        console.log("sCUR ownership -> Timelock");
+
+        staking.transferOwnership(address(timelock));
+        console.log("CURStaking ownership -> Timelock");
+
+        gauge.transferOwnership(address(timelock));
+        console.log("IncentiveGauge ownership -> Timelock");
+
+        veLock.transferOwnership(address(timelock));
+        console.log("veCURLock ownership -> Timelock");
+
+        revenue.transferOwnership(address(timelock));
+        console.log("RevenueRebatePool ownership -> Timelock");
+
+        nftChecker.transferOwnership(address(timelock));
+        console.log("NFTChecker ownership -> Timelock");
+
+        airdrop.transferOwnership(address(timelock));
+        console.log("Airdrop ownership -> Timelock");
+
+        // =========================================================
+        // Renounce deployer's Timelock admin role
+        // =========================================================
+
+        bytes32 defaultAdminRole = timelock.DEFAULT_ADMIN_ROLE();
+        require(
+            timelock.hasRole(defaultAdminRole, deployer),
+            "Deployer is not Timelock admin"
+        );
+
+        timelock.grantRole(defaultAdminRole, multisig);
+        console.log("Multisig granted Timelock admin role");
+
+        timelock.renounceRole(defaultAdminRole, deployer);
+        console.log("Deployer Timelock admin role renounced");
+
+        // =========================================================
+        // Final verification
+        // =========================================================
+
+        require(curToken.owner() == address(timelock), "CURToken owner mismatch");
+        require(sCURToken.owner() == address(timelock), "sCUR owner mismatch");
+        require(staking.owner() == address(timelock), "CURStaking owner mismatch");
+        require(gauge.owner() == address(timelock), "Gauge owner mismatch");
+        require(veLock.owner() == address(timelock), "veCURLock owner mismatch");
+        require(revenue.owner() == address(timelock), "Revenue owner mismatch");
+        require(nftChecker.owner() == address(timelock), "NFTChecker owner mismatch");
+        require(airdrop.owner() == address(timelock), "Airdrop owner mismatch");
+
+        require(
+            timelock.hasRole(timelock.PROPOSER_ROLE(), multisig),
+            "Multisig proposer missing"
+        );
+
+        require(
+            timelock.hasRole(timelock.EXECUTOR_ROLE(), address(0)),
+            "Open executor missing"
+        );
+
+        require(
+            !timelock.hasRole(defaultAdminRole, deployer),
+            "Deployer still has Timelock admin"
+        );
+
+        console.log("========================================");
+        console.log("Deployment completed successfully");
+        console.log("Timelock:", address(timelock));
+        console.log("========================================");
 
         vm.stopBroadcast();
     }

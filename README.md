@@ -130,7 +130,8 @@ The protocol is organized into several modular smart contracts with clearly sepa
 | `IncentiveGauge.sol` | Handles staking incentive and reward distribution |
 | `veCURLock.sol` | Manages time-based locking and bonus coefficients | 
 | `NFTChecker.sol` | Verifies NFT ownership and lock permissions |
-| `RevenueRebatePool.sol` | Handles protocol revenue collection and rebate into the staking system | 
+| `RevenueRebatePool.sol` | Handles protocol revenue collection and rebate into the staking system |
+| `Airdrop.sol` | Community airdrop distribution | 
 
 ---
 

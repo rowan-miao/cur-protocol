@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import "../interfaces/IveCURLock.sol";
 
 /**
  * @title NFTChecker
@@ -11,13 +12,19 @@ import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
  * @notice NFT permission validator for lock duration tiers
  * @dev Manages NFT whitelist and validates user NFT holdings for lock permissions
  *
- * Features:
+ * Key Features:
  * - Whitelist management for NFT contracts (owner only)
- * - NFT binding/unbinding to prevent reuse
- * - Permission tier validation (NONE, MID, HIGH)
- * - Anti-abuse mechanism: one NFT per account, one account per NFT
+ * - NFT binding/unbinding with anti-abuse mechanism:
+ *   - One NFT per account (user can only bind one NFT)
+ *   - One account per NFT (NFT can only be bound by one account)
+ * - Permission tier validation:
+ *   - TIER_NONE (0): No NFT, max lock 180 days
+ *   - TIER_MID (1): Mid-tier NFT, max lock 365 days
+ *   - TIER_HIGH (2): High-tier NFT, max lock 730 days
+ * - Lock-aware unbinding: cannot unbind while locked in veCURLock
  */
 contract NFTChecker is Pausable, Ownable {
+    IveCURLock public veLock;
     // ============================================
     // Constants
     // ============================================
@@ -64,7 +71,9 @@ contract NFTChecker is Pausable, Ownable {
     /// @notice Emitted when a user binds an NFT to their account
     event NFTBound(address indexed user, address indexed nftContract, uint256 tokenId, uint8 tier);
     /// @notice Emitted when a user unbinds an NFT
-    event NFTUnbound(address indexed user);
+    event NFTUnbound(address indexed user, address indexed nftContract, uint256 tokenId, uint8 tier);
+    /// @notice Emitted when veCURLock contract address is updated
+    event VeLockUpdated(address indexed oldVeLock, address indexed newVeLock);
 
     // ============================================
     // Errors
@@ -83,7 +92,24 @@ contract NFTChecker is Pausable, Ownable {
     /// @notice Thrown when caller is not the NFT owner
     error NotOwner();
     /// @notice Thrown when user has no bound NFT to unbind
-    error NoBinding();
+    error NotBound();
+    /// @notice Thrown when user is locked in veCURLock and cannot unbind
+    error PositionLocked();
+    /// @notice Thrown when the caller is not authorized
+    error Unauthorized();
+
+    // ============================================
+    // modifier
+    // ============================================
+
+    /**
+     * @notice Restricts function access to the veCURLock contract only
+     * @dev Reverts with Unauthorized if caller is not veLock
+     */
+    modifier onlyVeLock() {
+        if (msg.sender != address(veLock)) revert Unauthorized();
+        _;
+    }
 
     // ============================================
     // Constructor
@@ -91,55 +117,14 @@ contract NFTChecker is Pausable, Ownable {
 
     /**
      * @notice Initializes the NFTChecker contract
-     * @dev Sets the contract owner
+     * @param _veLock Address of the veCURLock contract
      */
-    constructor() Ownable(msg.sender) {}
-
-    // ============================================
-    // View Functions
-    // ============================================
-
-    /**
-     * @notice Verifies if a user owns a specific NFT
-     * @dev Returns false if NFT contract is not whitelisted
-     * @param user User address to check
-     * @param nftContract NFT contract address
-     * @param tokenId NFT token ID
-     * @return True if user owns the NFT and contract is whitelisted
-     */
-    function verifyOwnership(address user, address nftContract, uint256 tokenId) public view returns (bool) {
-        if (!whitelistedContracts[nftContract]) return false;
-
-        address owner = IERC721(nftContract).ownerOf(tokenId);
-        return owner == user;
+    constructor(address _veLock) Ownable(msg.sender) {
+        if(_veLock != address(0)) veLock = IveCURLock(_veLock);
     }
 
-    /**
-     * @notice Gets the tier level of an NFT contract
-     * @param nftContract NFT contract address
-     * @return Tier level (0 = NONE, 1 = MID, 2 = HIGH)
-     */
-    function getNFTTier(address nftContract) public view returns (uint8) {
-        if (!whitelistedContracts[nftContract]) return TIER_NONE;
-        return contractTiers[nftContract];
-    }
 
-    /**
-     * @notice Checks if an NFT contract is whitelisted
-     * @param nftContract NFT contract address
-     * @return True if contract is in whitelist
-     */
-    function isWhitelisted(address nftContract) public view returns (bool) {
-        return whitelistedContracts[nftContract];
-    }
-
-    /**
-     * @notice Gets the complete list of whitelisted NFT contracts
-     * @return Array of whitelisted contract addresses
-     */
-    function getWhitelistedContractsList() public view returns (address[] memory) {
-        return whitelistedContractsList;
-    }
+ 
 
     // ============================================
     // Admin Functions
@@ -213,20 +198,119 @@ contract NFTChecker is Pausable, Ownable {
     }
 
     /**
-     * @notice Unbinds the NFT from the caller's account
-     * @dev Allows the NFT to be bound by another user
+     * @notice Allows a user to unbind their own NFT
+     * @dev Caller is msg.sender; subject to lock check
      */
     function unbindNFT() public whenNotPaused {
+        _unbind(msg.sender);
+    }
+
+    /**
+     * @notice Internal unbind logic (shared by user self-unbind and veCURLock proxy-unbind)
+     * @param user Address of the user to unbind NFT for
+     */
+    function _unbind(address user) internal {
+        if(address(veLock) != address(0) && veLock.isLocked(user)) revert PositionLocked();
+        UserBinding memory binding = userBindings[user];
         //检查用户是否绑定Nft
-        if (!userBindings[msg.sender].isBound) revert NoBinding();
-        address nftContract = userBindings[msg.sender].nftContract;
-        uint256 tokenId = userBindings[msg.sender].tokenId;
+        if (!binding.isBound) revert NotBound();
+
+        address nftContract = binding.nftContract;
+        uint256 tokenId = binding.tokenId;
         //删除nftBound
-        delete nftBound[nftContract][tokenId];
+        nftBound[nftContract][tokenId] = false;
         //删除用户绑定信息
-        delete userBindings[msg.sender];
+        delete userBindings[user];
         //发送事件
-        emit NFTUnbound(msg.sender);
+        emit NFTUnbound(user, nftContract, tokenId, binding.tier);
+    }
+
+    /**
+     * @notice Proxy unbind called by veCURLock 
+     * @param user Address of the user to unbind NFT for
+     */
+    function unbindNFTFor(address user) external onlyVeLock {
+        _unbind(user);
+    }
+
+    
+    // ============================================
+    // View Functions 
+    // ============================================
+
+     /**
+     * @notice Verifies if a user owns a specific NFT
+     * @dev Returns false if NFT contract is not whitelisted
+     * @param user User address to check
+     * @param nftContract NFT contract address
+     * @param tokenId NFT token ID
+     * @return True if user owns the NFT and contract is whitelisted
+     */
+    function verifyOwnership(address user, address nftContract, uint256 tokenId) public view returns (bool) {
+        if (!whitelistedContracts[nftContract]) return false;
+
+        address owner = IERC721(nftContract).ownerOf(tokenId);
+        return owner == user;
+    }
+
+    /**
+     * @notice Gets the tier level of an NFT contract
+     * @param nftContract NFT contract address
+     * @return Tier level (0 = NONE, 1 = MID, 2 = HIGH)
+     */
+    function getNFTTier(address nftContract) public view returns (uint8) {
+        if (!whitelistedContracts[nftContract]) return TIER_NONE;
+        return contractTiers[nftContract];
+    }
+
+    /**
+     * @notice Checks if an NFT contract is whitelisted
+     * @param nftContract NFT contract address
+     * @return True if contract is in whitelist
+     */
+    function isWhitelisted(address nftContract) public view returns (bool) {
+        return whitelistedContracts[nftContract];
+    }
+
+    /**
+     * @notice Gets the complete list of whitelisted NFT contracts
+     * @return Array of whitelisted contract addresses
+     */
+    function getWhitelistedContractsList() public view returns (address[] memory) {
+        return whitelistedContractsList;
+    }
+
+    /**
+     * @notice Gets the user's bound NFT tier
+     * @param user User address
+     * @return tier NFT tier (0 if not bound)
+     */
+    function getUserTier(address user) public view returns (uint8){
+        return userBindings[user].tier;
+
+    }  
+
+    /**
+     * @notice Checks if a user has a bound NFT
+     * @param user User address to check
+     * @return True if user has a bound NFT, false otherwise
+     */
+    function isUserBound(address user) public view returns (bool) {
+        return userBindings[user].isBound;
+    }
+
+    /**
+     * @notice Updates the veCURLock contract address
+     * @dev Only callable by the owner to update the protocol dependency
+     * @param _veLock New veCURLock contract address
+     */
+    function setVeLock(address _veLock) public onlyOwner {
+        if (_veLock == address(0)) revert ZeroAddress();
+
+        address oldVeLock = address(veLock);
+        veLock = IveCURLock(_veLock);
+
+        emit VeLockUpdated(oldVeLock, _veLock);
     }
 
     // ============================================

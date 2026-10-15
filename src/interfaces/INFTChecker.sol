@@ -14,12 +14,14 @@ interface INFTChecker {
     function removeWhiteListedContract(address nftContract) external;
 
     function bindNFT(address nftContract, uint256 tokenId) external;
+    function unbindNFTFor(address user) external;
     function unbindNFT() external;
     function getWhitelistedContractsList() external view returns (address[] memory);
+    function getUserTier(address user) external view returns (uint8);
+    function isUserBound(address user) external view returns (bool);
 
     event ContractWhiteListed(address indexed nftContract, uint8 tier);
     event ContractRemove(address indexed nftContract);
     event NFTBound(address indexed user, address indexed nftContract, uint256 tokenId, uint8 tier);
-    event NFTUnbound(address indexed user);
+    event NFTUnbound(address indexed user, address indexed nftContract, uint256 tokenId, uint8 tier);
 }
-

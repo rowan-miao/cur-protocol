@@ -53,10 +53,9 @@ contract CURToken is ERC20, ERC20Burnable, Pausable, Ownable {
      * @notice Pauses all token transfers
      * @dev Only callable by the contract owner
      * @dev When paused:
-     *      - User-to-user transfers are blocked
-     *      - Minting and burning are still allowed
-     *      - Authorizations (approve) are not affected
-     * @custom:modifier onlyOwner
+     *      - All token movements are blocked (transfer, mint, burn)
+     *      - This includes gauge reward distribution and airdrop claims
+     *      - Use with caution: pausing will halt the entire protocol
      */
     function pause() public onlyOwner {
         _pause();

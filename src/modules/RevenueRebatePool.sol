@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "../interfaces/IsCUR.sol";
 import "../interfaces/ICURStaking.sol";
+import "../interfaces/IIncentiveGauge.sol";
 
 /**
  * @title RevenueRebatePool
@@ -24,8 +25,10 @@ contract RevenueRebatePool is Pausable, Ownable, ReentrancyGuard {
     IERC20 public immutable curToken;
     IsCUR public immutable sCURToken;
     ICURStaking public immutable curStaking;
+    IIncentiveGauge public gauge;
 
     uint256 public totalRevenue;
+    uint256 public totalUnallocatedEmission;
     uint256 public threshold = 1000 * 1e18;
 
     // ============================================
@@ -40,6 +43,10 @@ contract RevenueRebatePool is Pausable, Ownable, ReentrancyGuard {
     event RevenueInjectedAll(uint256 amount);
     /// @notice Emitted when injection threshold is updated
     event ThresholdUpdated(uint256 newthreshold);
+    /// @notice Emitted when unallocated emission is recorded
+    event UnallocatedEmissionRecorded(uint256 amount);
+    /// @notice Emitted when IncentiveGauge address is updated
+    event GaugeUpdated(address indexed oldGauge, address indexed newGauge);
 
     // ============================================
     // Errors
@@ -55,6 +62,23 @@ contract RevenueRebatePool is Pausable, Ownable, ReentrancyGuard {
     error InsufficientBalance();
     /// @notice Thrown when total revenue is below threshold for injectAll
     error BelowThreshold();
+    /// @notice Thrown when caller is not authorized
+    error Unauthorized();
+    /// @notice Thrown when sCUR total supply is zero (cannot inject)
+    error NoSCURSupply();
+
+    // ============================================
+    // Modifiers
+    // ============================================
+
+    /**
+     * @notice Restricts function access to the IncentiveGauge contract only
+     * @dev Reverts with Unauthorized if caller is not gauge
+     */
+    modifier onlyGauge() {
+        if (msg.sender != address(gauge)) revert Unauthorized();
+        _;
+    }
 
     // ============================================
     // Constructor
@@ -76,7 +100,10 @@ contract RevenueRebatePool is Pausable, Ownable, ReentrancyGuard {
         curStaking = ICURStaking(_curStaking);
 
         totalRevenue = 0;
+        totalUnallocatedEmission = 0;
     }
+
+    
 
     // ============================================
     // Revenue Collection
@@ -93,49 +120,68 @@ contract RevenueRebatePool is Pausable, Ownable, ReentrancyGuard {
         totalRevenue += amount;
         emit RevenueDeposited(msg.sender, amount);
     }
+    
+    /**
+     * @notice Records unallocated emission from IncentiveGauge
+     * @dev Only callable by IncentiveGauge when totalWeight == 0 (no stakers).
+     *      Increases totalUnallocatedEmission accounting.
+     * @param amount Amount of unallocated emission to record
+     */
+    function recordUnallocatedEmission(uint256 amount) public onlyGauge{
+        if(amount == 0) revert ZeroAmount();
+        totalUnallocatedEmission += amount; 
+        emit UnallocatedEmissionRecorded(amount);
+    }
 
     // ============================================
     // Revenue Injection
     // ============================================
 
     /**
-     * @notice Injects accumulated CUR revenue into the sCUR value pool
-     * @dev Converts protocol revenue into underlying value growth for sCUR holders by updating the sCUR exchange rate
-     * @param amount Amount of CUR revenue to inject into the sCUR pool
-     */
-    function _injectToSCUR(uint256 amount) internal {
-        //检查amount是否大于0
-        if (amount == 0) revert ZeroAmount();
-        //检查totalRevenue是否有足够
-        if (amount > totalRevenue) revert ExceedsRevenue();
-        //检查cur是否充足
-        uint256 balance = curToken.balanceOf(address(this));
-        if (amount > balance) revert InsufficientBalance();
-
-        curToken.transfer(address(curStaking), amount);
-        //更新汇率
-        sCURToken.updateExchangeRate(amount);
-
-        //更新taotalRevenue
-        totalRevenue -= amount;
-        //发送注入事件
-        emit RevenueInjected(amount);
-    }
-
-    /**
      * @notice Injects specified amount of CUR into sCUR pool
      * @dev Only callable by contract owner
      * @param amount Amount of CUR to inject
      */
-    function injectToSCUR(uint256 amount) public nonReentrant onlyOwner whenNotPaused {
+    function injectToSCUR(uint256 amount) public onlyOwner nonReentrant whenNotPaused {
         _injectToSCUR(amount);
     }
+
+    
+    /**
+     * @notice Internal logic to inject revenue into the sCUR pool
+     * @dev Must be called within a nonReentrant context
+     * @param amount Amount of CUR to inject
+     */
+    function _injectToSCUR(uint256 amount) internal{
+        //检查amount是否大于0
+        if (amount == 0) revert ZeroAmount();
+        //检查totalRevenue是否有足够
+        if (amount > totalRevenue) revert ExceedsRevenue();
+        if (address(curStaking) == address(0)) revert ZeroAddress();
+
+        if (sCURToken.totalSupply() == 0) revert NoSCURSupply();
+    
+        //检查cur是否充足
+        uint256 balance = curToken.balanceOf(address(this));
+        if (amount > balance) revert InsufficientBalance();
+
+        //更新taotalRevenue
+        totalRevenue -= amount;
+
+        sCURToken.updateExchangeRate(amount);
+
+        curToken.transfer(address(curStaking), amount);
+
+        //发送注入事件
+        emit RevenueInjected(amount);
+    }
+
 
     /**
      * @notice Injects all accumulated revenue into sCUR pool
      * @dev Only callable by contract owner, requires totalRevenue >= threshold
      */
-    function injectAll() public nonReentrant onlyOwner whenNotPaused {
+    function injectAll() public onlyOwner nonReentrant whenNotPaused {
         if (totalRevenue < threshold) revert BelowThreshold();
 
         uint256 amount = totalRevenue;
@@ -156,6 +202,21 @@ contract RevenueRebatePool is Pausable, Ownable, ReentrancyGuard {
     function setNewthreshold(uint256 newthreshold) public onlyOwner {
         threshold = newthreshold;
         emit ThresholdUpdated(newthreshold);
+    }
+
+    /**
+     * @notice Updates the IncentiveGauge contract address
+     * @dev Only callable by owner (TimelockController)
+     * @param _gauge New IncentiveGauge address
+     */
+    function setGauge(address _gauge) external onlyOwner {
+        if (_gauge == address(0)) revert ZeroAddress();
+
+        address oldGauge = address(gauge);
+        gauge = IIncentiveGauge(_gauge);
+
+        emit GaugeUpdated(oldGauge, _gauge);
+
     }
 
     // ============================================

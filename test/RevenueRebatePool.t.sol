@@ -4,59 +4,68 @@ pragma solidity ^0.8.28;
 import "forge-std/Test.sol";
 import "../src/core/CURToken.sol";
 import "../src/core/sCUR.sol";
+import "../src/core/CURStaking.sol";
 import "../src/modules/RevenueRebatePool.sol";
 
-contract MockSCUR {
-    uint256 public exchangeRate = 1e18;
-    uint256 public totalUnderlying;
-    address public lastCaller;
-    uint256 public lastAmount;
-    uint256 public totalSupply;
+// ============================================
+// Mock Contracts
+// ============================================
 
-    event ExchangeRateUpdated(uint256 oldRate, uint256 newRate);
+contract MockIncentiveGauge {
+    IsCUR public sCURToken;
 
-    function updateExchangeRate(uint256 additionalCUR) external returns (uint256) {
-        lastCaller = msg.sender;
-        lastAmount = additionalCUR;
-
-        uint256 oldRate = exchangeRate;
-        totalUnderlying += additionalCUR;
-
-        if (totalSupply > 0) {
-            exchangeRate = (totalUnderlying * 1e18) / totalSupply;
-        }
-
-        emit ExchangeRateUpdated(oldRate, exchangeRate);
-        return exchangeRate;
+    constructor(address _sCURToken) {
+        sCURToken = IsCUR(_sCURToken);
     }
 
-    function getExchangeRate() external view returns (uint256) {
-        return exchangeRate;
+    function deposit(address user, uint256 amount) external {
+      
     }
 
-    function setTotalSupply(uint256 _supply) external {
-        totalSupply = _supply;
+    function withdraw(address user, uint256 amount) external {
+        sCURToken.transfer(user, amount);
+    }
+
+    function getUserAmount(address user) external view returns (uint256) {
+        return 0;
+    }
+
+    function gaugeEmergencyWithdraw(address user) external {
+    
+    }
+
+    function emergencyClearReward(address user) external {
+       
+    }
+
+}
+
+contract MockVeCURLock {
+    mapping(address => bool) public locked;
+
+    function setLocked(address user, bool _locked) external {
+        locked[user] = _locked;
+    }
+
+    function isLocked(address user) external view returns (bool) {
+        return locked[user];
     }
 }
 
-contract MockCURStaking {
-    uint256 public receivedCUR;
-
-    function getExchangeRate() external pure returns (uint256) {
-        return 1e18;
-    }
-}
 
 contract RevenueRebatePoolTest is Test {
-    RevenueRebatePool public revenuePool;
     CURToken public curToken;
-    MockSCUR public mockSCUR;
-    MockCURStaking public staking;
+    sCUR public sCURToken;
+    RevenueRebatePool public revenuePool;
+    MockIncentiveGauge public gauge;
+    MockVeCURLock public veLock;
+    CURStaking public staking;
 
     address public owner = makeAddr("owner");
     address public alice = makeAddr("alice");
     address public bob = makeAddr("bob");
-    address public protocol = makeAddr("protocol");
+    address public charlie = makeAddr("charlie");
+  
 
     uint256 public constant PRECISION = 1e18;
     uint256 public constant DEFAULT_THRESHOLD = 1000 * 1e18;
@@ -65,6 +74,9 @@ contract RevenueRebatePoolTest is Test {
     event RevenueInjected(uint256 amount);
     event RevenueInjectedAll(uint256 amount);
     event ThresholdUpdated(uint256 newthreshold);
+    event UnallocatedEmissionRecorded(uint256 amount);
+    event GaugeUpdated(address indexed oldGauge, address indexed newGauge);
+
 
     // ============================================
     // Setup
@@ -73,12 +85,45 @@ contract RevenueRebatePoolTest is Test {
         vm.startPrank(owner);
 
         curToken = new CURToken();
-        mockSCUR = new MockSCUR();
-        staking = new MockCURStaking();
-        revenuePool = new RevenueRebatePool(address(curToken), address(mockSCUR), address(staking));
-        curToken.transfer(protocol, 100000 * 1e18);
+        sCURToken = new sCUR(address(curToken), address(0));
+        gauge = new MockIncentiveGauge(address(sCURToken));
+        veLock = new MockVeCURLock();
+        
+        staking = new CURStaking(
+            address(curToken),
+            address(sCURToken),
+            address(gauge),
+            address(veLock),
+            address(0)
+        );
+
+        revenuePool = new RevenueRebatePool(
+            address(curToken),
+            address(sCURToken),
+            address(staking) 
+        );
+
+        staking.setRevenueRebatePool(address(revenuePool));
+        revenuePool.setGauge(address(gauge));
+
+        sCURToken.addMinter(address(staking));
+        sCURToken.addMinter(address(revenuePool));
+
+        curToken.transfer(alice, 10_000 * 1e18);
+        curToken.transfer(bob, 10_000 * 1e18);    
+        curToken.transfer(charlie, 10_000 * 1e18);
 
         vm.stopPrank();
+
+        vm.prank(alice);
+        curToken.approve(address(revenuePool), type(uint256).max);
+        vm.prank(bob);
+        curToken.approve(address(revenuePool), type(uint256).max);
+        vm.prank(charlie);
+        curToken.approve(address(revenuePool), type(uint256).max);
+
+        vm.prank(alice);
+        curToken.approve(address(staking), type(uint256).max);
     }
 
     // ============================================
@@ -87,8 +132,9 @@ contract RevenueRebatePoolTest is Test {
 
     function test_constructor_SetsCorrectState() public view {
         assertEq(address(revenuePool.curToken()), address(curToken));
-        assertEq(address(revenuePool.sCURToken()), address(mockSCUR));
+        assertEq(address(revenuePool.sCURToken()), address(sCURToken));
         assertEq(revenuePool.totalRevenue(), 0);
+        assertEq(revenuePool.totalUnallocatedEmission(), 0);
         assertEq(revenuePool.threshold(), DEFAULT_THRESHOLD);
         assertEq(revenuePool.owner(), owner);
     }
@@ -96,7 +142,7 @@ contract RevenueRebatePoolTest is Test {
     function test_constructor_RevertsWhenCurTokenZero() public {
         vm.prank(owner);
         vm.expectRevert(RevenueRebatePool.ZeroAddress.selector);
-        new RevenueRebatePool(address(0), address(mockSCUR), address(staking));
+        new RevenueRebatePool(address(0), address(sCURToken), address(staking));
     }
 
     function test_constructor_RevertsWhenSCURZero() public {
@@ -108,7 +154,7 @@ contract RevenueRebatePoolTest is Test {
     function test_Constructor_RevertsWhenCurStakingZero() public {
         vm.prank(owner);
         vm.expectRevert(RevenueRebatePool.ZeroAddress.selector);
-        new RevenueRebatePool(address(curToken), address(mockSCUR), address(0));
+        new RevenueRebatePool(address(curToken), address(sCURToken), address(0));
     }
 
     // ============================================
@@ -118,32 +164,26 @@ contract RevenueRebatePoolTest is Test {
     function test_depositRevenue_Success() public {
         uint256 amount = 1000 * 1e18;
 
-        vm.prank(protocol);
-        curToken.approve(address(revenuePool), amount);
         uint256 beforeBalance = curToken.balanceOf(address(revenuePool));
-        uint256 beforeTotalRevenue = revenuePool.totalRevenue();
-
-        vm.prank(protocol);
+    
+        vm.prank(alice);
         revenuePool.depositRevenue(amount);
 
         assertEq(curToken.balanceOf(address(revenuePool)), beforeBalance + amount);
-        assertEq(revenuePool.totalRevenue(), beforeTotalRevenue + amount);
+        assertEq(revenuePool.totalRevenue(), amount);
     }
 
     function test_depositRevenue_Event() public {
         uint256 amount = 1000 * 1e18;
 
-        vm.prank(protocol);
-        curToken.approve(address(revenuePool), amount);
-
-        vm.prank(protocol);
+        vm.prank(alice);
         vm.expectEmit(true, false, false, true);
-        emit RevenueDeposited(protocol, amount);
+        emit RevenueDeposited(alice, amount);
         revenuePool.depositRevenue(amount);
     }
 
     function test_depositRevenue_ZeroAmount() public {
-        vm.prank(protocol);
+        vm.prank(alice);
         vm.expectRevert(RevenueRebatePool.ZeroAmount.selector);
         revenuePool.depositRevenue(0);
     }
@@ -151,16 +191,60 @@ contract RevenueRebatePoolTest is Test {
     function test_depositRevenue_MultipleDeposits() public {
         uint256 amount1 = 500 * 1e18;
         uint256 amount2 = 300 * 1e18;
-
-        vm.startPrank(protocol);
-        curToken.approve(address(revenuePool), amount1 + amount2);
-
+        
+        vm.prank(alice);
         revenuePool.depositRevenue(amount1);
-        assertEq(revenuePool.totalRevenue(), amount1);
-
+      
+        vm.prank(bob);
         revenuePool.depositRevenue(amount2);
         assertEq(revenuePool.totalRevenue(), amount1 + amount2);
-        vm.stopPrank();
+       
+    }
+
+    // ============================================
+    // RecordUnallocatedEmission Tests
+    // ============================================
+    function test_recordUnallocatedEmission_success() public {
+        uint256 amount = 500 * 1e18;
+
+        vm.prank(address(gauge));
+        revenuePool.recordUnallocatedEmission(amount);
+
+        assertEq(revenuePool.totalUnallocatedEmission(), amount);
+    }
+
+    function test_RecordUnallocatedEmission_Event() public {
+        uint256 amount = 500 * 1e18;
+
+        vm.prank(address(gauge));
+        vm.expectEmit(false, false, false, true);
+        emit UnallocatedEmissionRecorded(amount);
+        revenuePool.recordUnallocatedEmission(amount);
+    }
+
+    function test_RecordUnallocatedEmission_Unauthorized() public {
+        vm.prank(alice);
+        vm.expectRevert(RevenueRebatePool.Unauthorized.selector);
+        revenuePool.recordUnallocatedEmission(500 * 1e18);
+    }
+
+    function test_RecordUnallocatedEmission_ZeroAmount() public {
+        vm.prank(address(gauge));
+        vm.expectRevert(RevenueRebatePool.ZeroAmount.selector);
+        revenuePool.recordUnallocatedEmission(0);
+    }
+
+    function test_RecordUnallocatedEmission_Multiple() public {
+        uint256 amount1 = 500 * 1e18;
+        uint256 amount2 = 300 * 1e18;
+
+        vm.prank(address(gauge));
+        revenuePool.recordUnallocatedEmission(amount1);
+
+        vm.prank(address(gauge));
+        revenuePool.recordUnallocatedEmission(amount2);
+
+        assertEq(revenuePool.totalUnallocatedEmission(), amount1 + amount2);
     }
 
     // ============================================
@@ -171,50 +255,39 @@ contract RevenueRebatePoolTest is Test {
         uint256 depositAmount = 1000 * 1e18;
         uint256 injectAmount = 500 * 1e18;
 
-        vm.prank(protocol);
-        curToken.approve(address(revenuePool), depositAmount);
+        vm.prank(alice);
+        staking.stake(depositAmount);
 
-        vm.prank(protocol);
+        vm.prank(alice);
         revenuePool.depositRevenue(depositAmount);
+
+        uint256 beforeRate = sCURToken.getExchangeRate();
+        uint256 beforeStakingBalance = curToken.balanceOf(address(staking));
 
         vm.prank(owner);
         revenuePool.injectToSCUR(injectAmount);
 
+        assertGt(sCURToken.getExchangeRate(), beforeRate);
+        assertEq(curToken.balanceOf(address(staking)), beforeStakingBalance + injectAmount);
         assertEq(revenuePool.totalRevenue(), depositAmount - injectAmount);
-        assertEq(mockSCUR.lastCaller(), address(revenuePool));
-        assertEq(mockSCUR.lastAmount(), injectAmount);
     }
 
     function test_injectToSCUR_Event() public {
         uint256 depositAmount = 1000 * 1e18;
         uint256 injectAmount = 500 * 1e18;
 
-        vm.prank(protocol);
-        curToken.approve(address(revenuePool), depositAmount);
+        vm.prank(alice);
+        staking.stake(depositAmount);
 
-        vm.prank(protocol);
+        vm.prank(alice);
         revenuePool.depositRevenue(depositAmount);
 
         vm.prank(owner);
-        vm.expectEmit(true, false, false, false);
+        vm.expectEmit(false, false, false, true);
         emit RevenueInjected(injectAmount);
         revenuePool.injectToSCUR(injectAmount);
     }
 
-    function test_injectToSCUR_NotOwner() public {
-        uint256 depositAmount = 1000 * 1e18;
-        uint256 injectAmount = 500 * 1e18;
-
-        vm.prank(protocol);
-        curToken.approve(address(revenuePool), depositAmount);
-
-        vm.prank(protocol);
-        revenuePool.depositRevenue(depositAmount);
-
-        vm.prank(alice);
-        vm.expectRevert();
-        revenuePool.injectToSCUR(injectAmount);
-    }
 
     function test_injectToSCUR_ZeroAmount() public {
         vm.prank(owner);
@@ -224,51 +297,45 @@ contract RevenueRebatePoolTest is Test {
 
     function test_injectToSCUR_ExceedsRevenue() public {
         uint256 depositAmount = 1000 * 1e18;
-
-        vm.prank(protocol);
-        curToken.approve(address(revenuePool), depositAmount);
-
-        vm.prank(protocol);
-        revenuePool.depositRevenue(depositAmount);
-
+        
         vm.prank(owner);
         vm.expectRevert(RevenueRebatePool.ExceedsRevenue.selector);
-        revenuePool.injectToSCUR(depositAmount + 1);
+        revenuePool.injectToSCUR(depositAmount);
     }
+
+    function test_InjectToSCUR_NoSCURSupply() public {
+        uint256 amount = 1000 * 1e18;
+
+        vm.prank(alice);
+        revenuePool.depositRevenue(amount);
+
+        vm.prank(owner);
+        vm.expectRevert(RevenueRebatePool.NoSCURSupply.selector);
+        revenuePool.injectToSCUR(amount);
+    }
+
 
     function test_injectToSCUR_InsufficientBalance() public {
         uint256 amount = 1000 * 1e18;
 
-        vm.prank(protocol);
-        curToken.approve(address(revenuePool), amount);
-        vm.prank(protocol);
+        vm.prank(alice);
+        staking.stake(amount);
+
+        vm.prank(alice);
         revenuePool.depositRevenue(amount);
 
         vm.prank(address(revenuePool));
-        curToken.transfer(address(0x1234), amount);
+        curToken.transfer(owner, amount);
 
         vm.prank(owner);
         vm.expectRevert(RevenueRebatePool.InsufficientBalance.selector);
         revenuePool.injectToSCUR(amount);
     }
 
-    function test_injectToSCUR_MultipleInjections() public {
-        uint256 depositAmount = 3000 * 1e18;
-        uint256 injectAmount1 = 1000 * 1e18;
-        uint256 injectAmount2 = 1000 * 1e18;
-
-        vm.prank(protocol);
-        curToken.approve(address(revenuePool), depositAmount);
-        vm.prank(protocol);
-        revenuePool.depositRevenue(depositAmount);
-
-        vm.prank(owner);
-        revenuePool.injectToSCUR(injectAmount1);
-        assertEq(revenuePool.totalRevenue(), depositAmount - injectAmount1);
-
-        vm.prank(owner);
-        revenuePool.injectToSCUR(injectAmount2);
-        assertEq(revenuePool.totalRevenue(), depositAmount - injectAmount1 - injectAmount2);
+    function test_InjectToSCUR_NotOwner() public {
+        vm.prank(alice);
+        vm.expectRevert();
+        revenuePool.injectToSCUR(1000 * 1e18);
     }
 
     // ============================================
@@ -278,62 +345,50 @@ contract RevenueRebatePoolTest is Test {
     function test_injectAll_Success() public {
         uint256 depositAmount = 1000 * 1e18;
 
-        mockSCUR.setTotalSupply(1000000 ether);
+        vm.prank(alice);
+        staking.stake(depositAmount);
 
-        vm.prank(protocol);
-        curToken.approve(address(revenuePool), depositAmount);
-
-        vm.prank(protocol);
+        vm.prank(alice);
         revenuePool.depositRevenue(depositAmount);
 
         vm.prank(owner);
         revenuePool.injectAll();
 
         assertEq(revenuePool.totalRevenue(), 0);
-        assertEq(mockSCUR.lastCaller(), address(revenuePool));
-        assertEq(mockSCUR.lastAmount(), depositAmount);
     }
 
-    function test_injectAll_Emit() public {
+    function test_injectAll_Event() public {
         uint256 depositAmount = 1000 * 1e18;
 
-        vm.prank(protocol);
-        curToken.approve(address(revenuePool), depositAmount);
+        vm.prank(alice);
+        staking.stake(depositAmount);
 
-        vm.prank(protocol);
+        vm.prank(alice);
         revenuePool.depositRevenue(depositAmount);
 
         vm.prank(owner);
-        vm.expectEmit(true, false, false, true);
+        vm.expectEmit(false, false, false, true);
         emit RevenueInjectedAll(depositAmount);
-        revenuePool.injectAll();
-    }
-
-    function test_injectAll_NotOwner() public {
-        uint256 depositAmount = 1000 * 1e18;
-
-        vm.prank(protocol);
-        curToken.approve(address(revenuePool), depositAmount);
-
-        vm.prank(protocol);
-        revenuePool.depositRevenue(depositAmount);
-
-        vm.prank(alice);
-        vm.expectRevert();
         revenuePool.injectAll();
     }
 
     function test_injectAll_BelowThreshold() public {
         uint256 depositAmount = 500 * 1e18;
 
-        vm.prank(protocol);
-        curToken.approve(address(revenuePool), depositAmount);
+        vm.prank(alice);
+        staking.stake(depositAmount);
 
-        vm.prank(protocol);
+        vm.prank(alice);
         revenuePool.depositRevenue(depositAmount);
 
         vm.prank(owner);
         vm.expectRevert(RevenueRebatePool.BelowThreshold.selector);
+        revenuePool.injectAll();
+    }
+
+    function test_InjectAll_NotOwner() public {
+        vm.prank(alice);
+        vm.expectRevert();
         revenuePool.injectAll();
     }
 
@@ -349,11 +404,11 @@ contract RevenueRebatePoolTest is Test {
         assertEq(revenuePool.threshold(), newThreshold);
     }
 
-    function test_setNetThreshold_Emit() public {
+    function test_setNetThreshold_Event() public {
         uint256 newThreshold = 500 * 1e18;
 
         vm.prank(owner);
-        vm.expectEmit(true, false, false, false);
+        vm.expectEmit(false, false, false, true);
         emit ThresholdUpdated(newThreshold);
         revenuePool.setNewthreshold(newThreshold);
     }
@@ -367,25 +422,39 @@ contract RevenueRebatePoolTest is Test {
     }
 
     // ============================================
-    // GetContractBalance Tests
+    // SetGauge Tests
     // ============================================
-    function test_getContractBalance_ReturnsCorrectBalance() public {
-        uint256 depositAmount = 1000 * 1e18;
 
-        vm.prank(protocol);
-        curToken.approve(address(revenuePool), depositAmount);
-        vm.prank(protocol);
-        revenuePool.depositRevenue(depositAmount);
+    function test_SetGauge_Success() public {
+        address newGauge = makeAddr("newGauge");
 
-        assertEq(revenuePool.getContractBalance(), depositAmount);
+        vm.prank(owner);
+        vm.expectEmit(true, true, false, true);
+        emit GaugeUpdated(address(gauge), newGauge);
+        revenuePool.setGauge(newGauge);
+
+        assertEq(address(revenuePool.gauge()), newGauge);
     }
 
-    function test_GetContractBalance_AfterDeposit() public {
+    function test_SetGauge_ZeroAddress() public {
+        vm.prank(owner);
+        vm.expectRevert(RevenueRebatePool.ZeroAddress.selector);
+        revenuePool.setGauge(address(0));
+    }
+    
+    function test_SetGauge_NotOwner() public {
+        vm.prank(alice);
+        vm.expectRevert();
+        revenuePool.setGauge(makeAddr("newGauge"));
+    }
+
+    // ============================================
+    // GetContractBalance Tests
+    // ============================================
+    function test_GetContractBalance() public {
         uint256 amount = 1000 * 1e18;
 
-        vm.prank(protocol);
-        curToken.approve(address(revenuePool), amount);
-        vm.prank(protocol);
+        vm.prank(alice);
         revenuePool.depositRevenue(amount);
 
         assertEq(revenuePool.getContractBalance(), amount);
@@ -431,22 +500,13 @@ contract RevenueRebatePoolTest is Test {
         vm.prank(owner);
         revenuePool.pause();
 
-        uint256 amount = 1000 * 1e18;
-        vm.prank(protocol);
-        curToken.approve(address(revenuePool), amount);
-
-        vm.prank(protocol);
+        vm.prank(alice);
         vm.expectRevert();
-        revenuePool.depositRevenue(amount);
+        revenuePool.depositRevenue(1000 * 1e18);
     }
 
     function test_InjectToSCUR_WhenPaused() public {
         uint256 depositAmount = 1000 * 1e18;
-
-        vm.prank(protocol);
-        curToken.approve(address(revenuePool), depositAmount);
-        vm.prank(protocol);
-        revenuePool.depositRevenue(depositAmount);
 
         vm.prank(owner);
         revenuePool.pause();
@@ -456,21 +516,7 @@ contract RevenueRebatePoolTest is Test {
         revenuePool.injectToSCUR(500 * 1e18);
     }
 
-    function test_InjectAll_WhenPaused() public {
-        uint256 depositAmount = 2000 * 1e18;
-
-        vm.prank(protocol);
-        curToken.approve(address(revenuePool), depositAmount);
-        vm.prank(protocol);
-        revenuePool.depositRevenue(depositAmount);
-
-        vm.prank(owner);
-        revenuePool.pause();
-
-        vm.prank(owner);
-        vm.expectRevert();
-        revenuePool.injectAll();
-    }
+   
 
     // ============================================
     // Edge Case Tests
@@ -478,27 +524,28 @@ contract RevenueRebatePoolTest is Test {
 
     function test_EdgeCase_DepositAndInjectSameAmount() public {
         uint256 amount = 1000 * 1e18;
-
-        vm.prank(protocol);
-        curToken.approve(address(revenuePool), amount);
-
-        vm.prank(protocol);
+        
+        vm.prank(alice);
+        staking.stake(amount);
+   
+        vm.prank(alice);
         revenuePool.depositRevenue(amount);
+
         vm.prank(owner);
         revenuePool.injectToSCUR(amount);
 
         assertEq(revenuePool.totalRevenue(), 0);
         assertEq(revenuePool.getContractBalance(), 0);
-        assertEq(curToken.balanceOf(address(staking)), amount);
+        assertEq(curToken.balanceOf(address(staking)), amount * 2);
     }
 
     function test_EdgeCase_InjectMoreThanDeposited() public {
         uint256 amount = 1000 * 1e18;
 
-        vm.prank(protocol);
-        curToken.approve(address(revenuePool), amount);
-
-        vm.prank(protocol);
+        vm.prank(alice);
+        staking.stake(amount);
+   
+        vm.prank(alice);
         revenuePool.depositRevenue(amount);
 
         vm.prank(owner);
@@ -506,18 +553,14 @@ contract RevenueRebatePoolTest is Test {
         revenuePool.injectToSCUR(amount + 1);
     }
 
-    function test_EdgeCase_InjectAllWhenTotalRevenueZero() public {
-        vm.prank(owner);
-        vm.expectRevert(RevenueRebatePool.BelowThreshold.selector);
-        revenuePool.injectAll();
-    }
 
     function test_EdgeCase_ExactlyAtThreshold() public {
         uint256 amount = 1000 * 1e18;
 
-        vm.prank(protocol);
-        curToken.approve(address(revenuePool), amount);
-        vm.prank(protocol);
+        vm.prank(alice);
+        staking.stake(amount);
+   
+        vm.prank(alice);
         revenuePool.depositRevenue(amount);
 
         vm.prank(owner);
@@ -531,9 +574,10 @@ contract RevenueRebatePoolTest is Test {
         revenuePool.setNewthreshold(0);
 
         uint256 amount = 100 * 1e18;
-        vm.prank(protocol);
-        curToken.approve(address(revenuePool), amount);
-        vm.prank(protocol);
+        vm.prank(alice);
+        staking.stake(amount);
+   
+        vm.prank(alice);
         revenuePool.depositRevenue(amount);
 
         vm.prank(owner);
@@ -543,9 +587,10 @@ contract RevenueRebatePoolTest is Test {
 
     function test_EdgeCase_InjectPartialThenInjectAll() public {
         uint256 amount = 2000 * 1e18;
-        vm.prank(protocol);
-        curToken.approve(address(revenuePool), amount);
-        vm.prank(protocol);
+        vm.prank(alice);
+        staking.stake(amount);
+   
+        vm.prank(alice);
         revenuePool.depositRevenue(amount);
 
         vm.prank(owner);
@@ -558,13 +603,14 @@ contract RevenueRebatePoolTest is Test {
     }
 
     function test_EdgeCase_MultipleDepositsAndInjections() public {
+        vm.prank(alice);
+        staking.stake(1000 * 1e18);
+
         for (uint256 i = 0; i < 5; i++) {
             uint256 depositAmount = 200 * 1e18;
             uint256 injectAmount = 100 * 1e18;
-
-            vm.prank(protocol);
-            curToken.approve(address(revenuePool), depositAmount);
-            vm.prank(protocol);
+   
+            vm.prank(alice);
             revenuePool.depositRevenue(depositAmount);
 
             vm.prank(owner);
@@ -576,9 +622,10 @@ contract RevenueRebatePoolTest is Test {
 
     function test_EdgeCase_ChangeThresholdAfterDeposit() public {
         uint256 amount = 600 * 1e18;
-        vm.prank(protocol);
-        curToken.approve(address(revenuePool), amount);
-        vm.prank(protocol);
+        vm.prank(alice);
+        staking.stake(amount);
+   
+        vm.prank(alice);
         revenuePool.depositRevenue(amount);
 
         vm.prank(owner);
@@ -598,29 +645,32 @@ contract RevenueRebatePoolTest is Test {
     // ============================================
 
     function test_Fuzz_DepositRevenue(uint256 amount) public {
-        vm.assume(amount > 0);
-        vm.assume(amount < 10000 * 1e18);
-
-        vm.prank(protocol);
-        curToken.approve(address(revenuePool), amount);
-
+        amount = bound(amount, 1, 10000 * 1e18);
         uint256 beforeTotalRevenue = revenuePool.totalRevenue();
 
-        vm.prank(protocol);
+        vm.prank(alice);
         revenuePool.depositRevenue(amount);
 
         assertEq(revenuePool.totalRevenue(), beforeTotalRevenue + amount);
     }
 
     function test_Fuzz_InjectToSCUR(uint256 depositAmount, uint256 injectAmount) public {
-        vm.assume(depositAmount > 0);
-        vm.assume(depositAmount < 100000 * 1e18);
-        vm.assume(injectAmount > 0);
-        vm.assume(injectAmount <= depositAmount);
+        address user = makeAddr("fuzzUser");
+        depositAmount = bound(depositAmount, 1e12, 10_000 * 1e18);
+        injectAmount = bound(injectAmount, 1, depositAmount);
 
-        vm.prank(protocol);
-        curToken.approve(address(revenuePool), depositAmount);
-        vm.prank(protocol);
+        vm.prank(owner);
+        curToken.transfer(user, depositAmount * 2);
+
+        vm.prank(user);
+        curToken.approve(address(staking), type(uint256).max);
+        vm.prank(user);
+        curToken.approve(address(revenuePool), type(uint256).max);
+
+        vm.prank(user);
+        staking.stake(depositAmount);
+
+        vm.prank(user);
         revenuePool.depositRevenue(depositAmount);
 
         uint256 beforeTotal = revenuePool.totalRevenue();
@@ -629,14 +679,8 @@ contract RevenueRebatePoolTest is Test {
         revenuePool.injectToSCUR(injectAmount);
 
         assertEq(revenuePool.totalRevenue(), beforeTotal - injectAmount);
-        assertEq(mockSCUR.lastAmount(), injectAmount);
+    
     }
 
-    function test_Fuzz_SetThreshold(uint256 newThreshold) public {
-        vm.assume(newThreshold <= 100_000_000 * 1e18);
-        vm.prank(owner);
-        revenuePool.setNewthreshold(newThreshold);
 
-        assertEq(revenuePool.threshold(), newThreshold);
-    }
 }

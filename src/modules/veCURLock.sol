@@ -5,7 +5,6 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "../interfaces/IsCUR.sol";
-import "../interfaces/ICURStaking.sol";
 import "../interfaces/INFTChecker.sol";
 import "../interfaces/IIncentiveGauge.sol";
 
@@ -14,17 +13,19 @@ import "../interfaces/IIncentiveGauge.sol";
  * @author CUR Protocol Team
  * @notice Manages lock commitments and provides bonus multipliers for stakers
  * @dev Non-custodial: only records lock commitments, does not hold sCUR assets
+ *      (sCUR is held by IncentiveGauge, not by this contract)
  *
  * Features:
- * - Lock sCUR for 30-730 days to get bonus multipliers
+ * - Lock sCUR for 30-730 days to get bonus multipliers (1.15x - 2.50x)
  * - Different lock durations give different bonus factors
- * - Early unlock triggers penalty calculation
- * - NFT integration for unlocking higher lock tiers
+ * - Early unlock triggers penalty calculation (up to 50% of locked amount)
+ * - NFT integration for higher lock tiers (via NFTChecker)
+ * - Notifies IncentiveGauge on lock/unlock to update user weight
+ * - Lock-aware NFT unbinding: NFTChecker prevents unbinding while locked
  */
 contract veCURLock is Pausable, Ownable, ReentrancyGuard {
     IsCUR public immutable sCURToken;
-    ICURStaking public curStake;
-    INFTChecker public nftChecker;
+    INFTChecker public immutable nftChecker;
     IIncentiveGauge public incentiveGauge;
 
     // ============================================
@@ -48,7 +49,7 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
     uint256 public constant MIN_LOCK_DURATION = 30 days;
     uint256 public constant MAX_LOCK_DURATION = 730 days;
     uint256 public constant MIN_BONUS_FACTOR = 1e18;
-    uint256 public constant MAX_BONUS_FACTOR = 250 * PRECISION;
+    uint256 public constant MAX_BONUS_FACTOR = 2.5e18;
     uint256 public constant PENALTY_RATE = 5000;
 
     uint256 public totalLocked;
@@ -70,23 +71,12 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
         bool isLocked;
     }
 
-    /**
-     * @title NFTBinding
-     * @notice NFT binding information for lock permission
-     */
-    struct NFTBinding {
-        address nftContract;
-        uint256 tokenId;
-        uint8 tier;
-        bool isBound;
-    }
 
     // ============================================
     // State Variables
     // ============================================
     mapping(address => LockInfo) public locks;
-    mapping(address => NFTBinding) public nftBindings;
-    mapping(address => mapping(uint256 => bool)) public isNFTBound;
+
 
     // ============================================
     // Events
@@ -98,14 +88,8 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
     event Unlocked(address indexed user, uint256 amount);
     /// @notice Emitted when a user unlocks early with penalty
     event EarlyUnlocked(address indexed user, uint256 amount, uint256 penalty);
-    /// @notice Emitted when NFT is bound to lock
-    event NFTBound(address indexed user, address indexed nftContract, uint256 tokenId, uint8 tier);
-    /// @notice Emitted when NFT is unbound
-    event NFTUnbound(address indexed user, address indexed nftContract, uint256 tokenId, uint8 tier);
-    /// @notice Emitted when NFTChecker address is updated
-    event NFTCheckerUpdated(address indexed newChecker);
     /// @notice Emitted when IncentiveGauge address is updated
-    event IncentiveGaugeUpdated(address indexed newGauge);
+    event IncentiveGaugeUpdated(address indexed oldGauge, address indexed newGauge);
 
     // ============================================
     // Errors
@@ -141,21 +125,18 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
     /**
      * @notice Initializes the veCURLock contract
      * @param _sCURToken Address of the sCUR token
-     * @param _curStake Address of the CURStaking contract
      * @param _nftChecker Address of the NFTChecker contract
      * @param _incentiveGauge Address of the IncentiveGauge contract
      */
-    constructor(address _sCURToken, address _curStake, address _nftChecker, address _incentiveGauge)
+    constructor(address _sCURToken, address _nftChecker, address _incentiveGauge)
         Ownable(msg.sender)
     {
         if (_sCURToken == address(0)) revert ZeroAddress();
-        if (_curStake == address(0)) revert ZeroAddress();
         if (_nftChecker == address(0)) revert ZeroAddress();
 
         sCURToken = IsCUR(_sCURToken);
-        curStake = ICURStaking(_curStake);
         nftChecker = INFTChecker(_nftChecker);
-
+        
         if (_incentiveGauge != address(0)) incentiveGauge = IIncentiveGauge(_incentiveGauge);
 
         totalLocked = 0;
@@ -195,12 +176,12 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
      * @return maxLockDuration Maximum lock duration in seconds
      */
     function getMaxLockDuration(address user) public view returns (uint256 maxLockDuration) {
-        NFTBinding memory binding = nftBindings[user];
-        if (!binding.isBound) {
+        uint8 tier = nftChecker.getUserTier(user);
+        if (tier == 0) {
             return DURATION_180;
         }
 
-        if (binding.tier == 2) {
+        if (tier == 2) {
             return DURATION_730;
         }
 
@@ -225,7 +206,7 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
         //查看用户是否锁仓
         if (locks[msg.sender].isLocked) revert AlreadyLocked();
         //获得用户在矿池中质押的scur数量
-        (, uint256 depositedGauge) = curStake.getUserInfo(msg.sender);
+        uint256 depositedGauge = incentiveGauge.getUserAmount(msg.sender);
         if (depositedGauge == 0) revert ZeroSCUR();
         //获得bonus系数
         uint256 bonus = getBonusByDuration(duration);
@@ -257,15 +238,15 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
         if (!lockInfo.isLocked) revert NotLocked();
         //检查锁仓是否到期
         if (block.timestamp < lockInfo.endTime) revert NotExpired();
+        uint256 amount = lockInfo.amount;
         //更新合约状态
-        locks[msg.sender].isLocked = false;
-        totalLocked -= lockInfo.amount;
+        lockInfo.isLocked = false;
+        totalLocked -= amount;
 
-        _releaseNFTBinding(msg.sender);
         //通知incentiveGauge更改权重
         incentiveGauge.executeUnlock(msg.sender);
         //发送事件
-        emit Unlocked(msg.sender, lockInfo.amount);
+        emit Unlocked(msg.sender, amount);
     }
 
     /**
@@ -280,14 +261,14 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
         //检查锁仓是否到期
         if (block.timestamp >= lockInfo.endTime) revert AlreadyExpired();
         //计算罚金
-        uint256 penaltyAmount = _calculatePenalty(lockInfo.amount, lockInfo.startTime, lockInfo.endTime);
+        uint256 penaltyAmount = calculatePenalty(msg.sender);
         //更新锁仓变量
-        locks[msg.sender].isLocked = false;
+        lockInfo.isLocked = false;
         //更新totalLocked
         totalLocked -= lockInfo.amount;
+        // 解除 NFT 绑定
+        nftChecker.unbindNFTFor(msg.sender);
 
-        //释放NFT
-        _releaseNFTBinding(msg.sender);
         //通知incentiveGauge更改权重
         incentiveGauge.executeEarlyUnlock(msg.sender, penaltyAmount);
         //发送事件
@@ -295,98 +276,27 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice Calculates early unlock penalty
-     * @dev Penalty = amount × 50% × (remaining time / total time)
-     * @param amount Locked sCUR amount
-     * @param startTime Lock start timestamp
-     * @param endTime Lock end timestamp
-     * @return penalty Amount to be penalized (burned)
+     * @notice Calculates penalty for a user's lock
+     * @param user User address
+     * @return penalty Penalty amount
      */
-    function _calculatePenalty(uint256 amount, uint256 startTime, uint256 endTime)
-        internal
-        view
-        returns (uint256 penalty)
-    {
-        if (block.timestamp >= endTime) return 0;
+    function calculatePenalty(address user) public view returns(uint256 penalty) {
+        LockInfo memory lockInfo = locks[user];
+        if (!lockInfo.isLocked) revert NotLocked();
+        if (block.timestamp >= lockInfo.endTime) revert AlreadyExpired();
 
-        uint256 remaining = endTime - block.timestamp;
-        uint256 totalTime = endTime - startTime;
+        uint256 remaining = lockInfo.endTime - block.timestamp;
+        uint256 totalTime = lockInfo.endTime - lockInfo.startTime;
 
-        uint256 penaltyBasis = (remaining * PENALTY_RATE) / totalTime;
-        penalty = (amount * penaltyBasis) / 10000;
+        penalty = (lockInfo.amount * PENALTY_RATE * remaining ) / totalTime / 10000;
 
         return penalty;
     }
 
-    // ============================================
-    // NFT Binding Functions
-    // ============================================
-
-    /**
-     * @notice Binds an NFT to the user's account for lock permission
-     * @param nftContract NFT contract address
-     * @param tokenId NFT token ID
-     */
-    function bindNFT(address nftContract, uint256 tokenId) public nonReentrant whenNotPaused {
-        //检查用户是否持有Nft
-        if (!nftChecker.verifyOwnership(msg.sender, nftContract, tokenId)) revert NotNFTOwner();
-        //检查nft是否被绑定
-        if (isNFTBound[nftContract][tokenId]) revert AlreadyBound();
-        uint256 tier = nftChecker.getNFTTier(nftContract);
-        //更新NFT变量
-        nftBindings[msg.sender] =
-            NFTBinding({nftContract: nftContract, tokenId: tokenId, tier: uint8(tier), isBound: true});
-        //绑定Nft
-        isNFTBound[nftContract][tokenId] = true;
-
-        emit NFTBound(msg.sender, nftContract, tokenId, uint8(tier));
-    }
-
-    /**
-     * @notice Unbinds the NFT lock permission from the caller.
-     * @dev Clears the NFT binding record without transferring NFT ownership.
-     */
-    function unbindNFT() public nonReentrant whenNotPaused {
-        NFTBinding memory binding = nftBindings[msg.sender];
-
-        //检查用户是否绑定NFT
-        if (!binding.isBound) revert NotBound();
-
-        //更新NFT变量
-        isNFTBound[binding.nftContract][binding.tokenId] = false;
-        delete nftBindings[msg.sender];
-
-        emit NFTUnbound(msg.sender, binding.nftContract, binding.tokenId, binding.tier);
-    }
-
-    /**
-     * @notice Internal function to release NFT binding
-     * @param user User address to release NFT for
-     */
-    function _releaseNFTBinding(address user) internal {
-        NFTBinding memory binding = nftBindings[user];
-        if (binding.isBound) {
-            isNFTBound[binding.nftContract][binding.tokenId] = false;
-            delete nftBindings[user];
-        }
-    }
 
     // ============================================
     // View Functions
     // ============================================
-
-    /**
-     * @notice Calculates penalty for a user's lock
-     * @param user User address
-     * @return Penalty amount
-     */
-    function calculatePenalty(address user) public view returns (uint256) {
-        LockInfo memory lockInfo = locks[user];
-        if (!lockInfo.isLocked) return 0;
-        if (block.timestamp >= lockInfo.endTime) return 0;
-        return _calculatePenalty(lockInfo.amount, lockInfo.startTime, lockInfo.endTime);
-    }
-
     /**
      * @notice Gets remaining lock time for a user
      * @param user User address
@@ -413,9 +323,22 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
         return lockInfo.bonusFactor;
     }
 
+    /**
+     * @notice Checks if a user has an active lock
+     * @param user User address
+     * @return True if user has an active lock
+     */
+    function isLocked(address user) public view returns (bool){
+        LockInfo memory lockInfo = locks[user];
+        return lockInfo.isLocked;
+    }
+
+  
+
     // ============================================
     // Admin Functions
     // ============================================
+
 
     /**
      * @notice Updates IncentiveGauge contract address
@@ -423,8 +346,12 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
      */
     function setIncentiveGauge(address _incentiveGauge) public onlyOwner {
         if (_incentiveGauge == address(0)) revert ZeroAddress();
+
+        address oldGauge = address(incentiveGauge);
         incentiveGauge = IIncentiveGauge(_incentiveGauge);
-        emit IncentiveGaugeUpdated(_incentiveGauge);
+
+        emit IncentiveGaugeUpdated(oldGauge, _incentiveGauge);
+       
     }
 
     // ============================================
