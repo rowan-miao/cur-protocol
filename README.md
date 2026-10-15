@@ -71,52 +71,25 @@ cur-protocol/
 
 The protocol is organized into several modular smart contracts with clearly separated responsibilities:
 
-```text
-                         ┌──────────────────┐
-                         │     CURToken     │
-                         │    $CUR Token    │
-                         └────────┬─────────┘
-                                  │
-                                  ▼
-                         ┌──────────────────┐
-                         │   CURStaking     │
-                         │  Stake / Unstake │
-                         │ Reward Settlement│
-                         └───────┬──────────┘
-                                 │
-                    ┌────────────┼────────────┐
-                    │            │            │
-                    ▼            ▼            ▼
-             ┌────────────┐ ┌────────────┐ ┌──────────────┐
-             │    sCUR    │ │ Incentive  │ │  veCURLock   │
-             │ Liquid     │ │   Gauge    │ │ Time Lock    │
-             │ Receipt    │ │  Rewards   │ │              │
-             └────────────┘ └────────────┘ └──────┬───────┘
-                                                  │
-                                                  ▼
-                                           ┌──────────────┐
-                                           │ NFTChecker   │
-                                           │ Permissions  │
-                                           └──────────────┘
+```mermaid
+graph TD
 
-             Protocol Revenue
-                      │
-                      ▼
-          ┌────────────────────┐
-          │ RevenueRebatePool  │
-          │                    │
-          │ Revenue → CUR      │
-          └─────────┬──────────┘
-                    │
-                    ▼
-             Underlying CUR
-                    │
-                    ▼
-          ┌────────────────────┐
-          │  sCUR ExchangeRate │
-          │                    │
-          │  Value of sCUR     │
-          └────────────────────┘
+    CURToken --> CURStaking
+    CURStaking --> sCUR
+    CURStaking --> IncentiveGauge
+    CURStaking --> veCURLock
+    CURStaking --> RevenueRebatePool
+    
+    IncentiveGauge --> sCUR
+    IncentiveGauge --> veCURLock
+    IncentiveGauge --> RevenueRebatePool
+    
+    veCURLock --> IncentiveGauge
+    veCURLock --> NFTChecker
+    NFTChecker --> veCURLock
+    
+    RevenueRebatePool --> sCUR
+    RevenueRebatePool --> CURStaking
 ```
 ---
                        
