@@ -62,13 +62,12 @@ contract sCUR is ERC20, Pausable, Ownable, ReentrancyGuard {
 
     /// @notice Emitted when IncentiveGauge address is updated
     event IncentiveGaugeUpdated(address indexed oldGauge, address indexed newGauge);
-    
+
     /// @notice Emitted when CURStaking address is updated
     event CurStakingUpdated(address indexed newStaking);
 
     /// @notice Emitted when sCUR is burned from the gauge as an early-unlock penalty
     event PenaltyBurned(address indexed gauge, uint256 sCURBurned, uint256 curAmount);
-
 
     // ============================================
     // Errors
@@ -123,7 +122,7 @@ contract sCUR is ERC20, Pausable, Ownable, ReentrancyGuard {
      */
     modifier onlyGauge() {
         if (msg.sender != address(incentiveGauge)) revert Unauthorized();
-       _;
+        _;
     }
 
     // ============================================
@@ -138,10 +137,10 @@ contract sCUR is ERC20, Pausable, Ownable, ReentrancyGuard {
      */
     constructor(address _curToken, address _curStaking) ERC20("Staked CUR", "sCUR") Ownable(msg.sender) {
         if (_curToken == address(0)) revert ZeroAddress();
-    
+
         CURToken = IERC20(_curToken);
-        
-        if (_curStaking != address(0)){
+
+        if (_curStaking != address(0)) {
             CUR_STAKING = _curStaking;
             minters[_curStaking] = true;
             emit MinterAdded(_curStaking);
@@ -149,8 +148,6 @@ contract sCUR is ERC20, Pausable, Ownable, ReentrancyGuard {
 
         currentExchangeRate = INITIAL_EXCHANGE_RATE;
     }
-
-   
 
     // ============================================
     // Minter Management
@@ -217,7 +214,6 @@ contract sCUR is ERC20, Pausable, Ownable, ReentrancyGuard {
         emit Mint(to, CURAmount, sCURAmount);
         return sCURAmount;
     }
-     
 
     /**
      * @notice Redeems sCUR tokens for CUR
@@ -254,7 +250,7 @@ contract sCUR is ERC20, Pausable, Ownable, ReentrancyGuard {
         CURAmount = sCURAmount * currentExchangeRate / PRECISION;
 
         if (CURAmount > totalUnderlying) revert InsufficientUnderlying();
-        
+
         totalUnderlying -= CURAmount;
 
         _burn(from, sCURAmount);
@@ -267,14 +263,14 @@ contract sCUR is ERC20, Pausable, Ownable, ReentrancyGuard {
      * @notice Burns sCUR from gauge for penalty fees
      * @dev Only callable by IncentiveGauge
      * @dev Burns sCUR held in gauge and returns CUR amount
-     * @param penalty Amount of sCUR to burn 
+     * @param penalty Amount of sCUR to burn
      * @return curAmount Equivalent CUR amount represented by the burned sCUR
      */
     function burnGaugePenalty(uint256 penalty) external onlyGauge whenNotPaused returns (uint256 curAmount) {
         if (penalty == 0) revert ZeroAmount();
 
         curAmount = (penalty * currentExchangeRate) / PRECISION;
-        
+
         if (curAmount > totalUnderlying) revert InsufficientUnderlying();
         totalUnderlying -= curAmount;
 
@@ -293,7 +289,7 @@ contract sCUR is ERC20, Pausable, Ownable, ReentrancyGuard {
      */
     function updateExchangeRate(uint256 additionalCUR) public onlyMinter returns (uint256 newRate) {
         if (additionalCUR == 0) revert ZeroAmount();
-        
+
         uint256 currentTotalSupply = totalSupply();
         if (currentTotalSupply == 0) revert NoSupply();
 
@@ -319,7 +315,7 @@ contract sCUR is ERC20, Pausable, Ownable, ReentrancyGuard {
     function emergencyRedeem(address from, uint256 sCURAmount) public onlyMinter nonReentrant returns (uint256) {
         return _redeem(from, sCURAmount);
     }
-   
+
     // ============================================
     // View Functions
     // ============================================
@@ -344,15 +340,14 @@ contract sCUR is ERC20, Pausable, Ownable, ReentrancyGuard {
         emit IncentiveGaugeUpdated(oldGauge, _incentiveGauge);
     }
 
-    function setCurStaking(address _curStaking) public onlyOwner{
-        if(_curStaking == address(0)) revert ZeroAddress();
-        if(CUR_STAKING != address(0)) revert StakingAlreadySet();
+    function setCurStaking(address _curStaking) public onlyOwner {
+        if (_curStaking == address(0)) revert ZeroAddress();
+        if (CUR_STAKING != address(0)) revert StakingAlreadySet();
 
         CUR_STAKING = _curStaking;
         minters[_curStaking] = true;
 
         emit CurStakingUpdated(_curStaking);
-     
     }
 
     // ============================================

@@ -33,8 +33,9 @@ contract MockERC721 {
     }
 }
 
-contract MockVeCURLock{
+contract MockVeCURLock {
     mapping(address => bool) locks;
+
     function setLocked(address user, bool locked) external {
         locks[user] = locked;
     }
@@ -42,7 +43,6 @@ contract MockVeCURLock{
     function isLocked(address user) external view returns (bool) {
         return locks[user];
     }
-
 }
 
 contract NFTCheckerTest is Test {

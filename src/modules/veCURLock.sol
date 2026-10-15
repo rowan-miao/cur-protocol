@@ -71,12 +71,10 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
         bool isLocked;
     }
 
-
     // ============================================
     // State Variables
     // ============================================
     mapping(address => LockInfo) public locks;
-
 
     // ============================================
     // Events
@@ -128,15 +126,13 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
      * @param _nftChecker Address of the NFTChecker contract
      * @param _incentiveGauge Address of the IncentiveGauge contract
      */
-    constructor(address _sCURToken, address _nftChecker, address _incentiveGauge)
-        Ownable(msg.sender)
-    {
+    constructor(address _sCURToken, address _nftChecker, address _incentiveGauge) Ownable(msg.sender) {
         if (_sCURToken == address(0)) revert ZeroAddress();
         if (_nftChecker == address(0)) revert ZeroAddress();
 
         sCURToken = IsCUR(_sCURToken);
         nftChecker = INFTChecker(_nftChecker);
-        
+
         if (_incentiveGauge != address(0)) incentiveGauge = IIncentiveGauge(_incentiveGauge);
 
         totalLocked = 0;
@@ -280,7 +276,7 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
      * @param user User address
      * @return penalty Penalty amount
      */
-    function calculatePenalty(address user) public view returns(uint256 penalty) {
+    function calculatePenalty(address user) public view returns (uint256 penalty) {
         LockInfo memory lockInfo = locks[user];
         if (!lockInfo.isLocked) revert NotLocked();
         if (block.timestamp >= lockInfo.endTime) revert AlreadyExpired();
@@ -288,11 +284,10 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
         uint256 remaining = lockInfo.endTime - block.timestamp;
         uint256 totalTime = lockInfo.endTime - lockInfo.startTime;
 
-        penalty = (lockInfo.amount * PENALTY_RATE * remaining ) / totalTime / 10000;
+        penalty = (lockInfo.amount * PENALTY_RATE * remaining) / totalTime / 10000;
 
         return penalty;
     }
-
 
     // ============================================
     // View Functions
@@ -328,17 +323,14 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
      * @param user User address
      * @return True if user has an active lock
      */
-    function isLocked(address user) public view returns (bool){
+    function isLocked(address user) public view returns (bool) {
         LockInfo memory lockInfo = locks[user];
         return lockInfo.isLocked;
     }
 
-  
-
     // ============================================
     // Admin Functions
     // ============================================
-
 
     /**
      * @notice Updates IncentiveGauge contract address
@@ -351,7 +343,6 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
         incentiveGauge = IIncentiveGauge(_incentiveGauge);
 
         emit IncentiveGaugeUpdated(oldGauge, _incentiveGauge);
-       
     }
 
     // ============================================

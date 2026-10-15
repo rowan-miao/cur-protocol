@@ -30,10 +30,10 @@ contract DeployScript is Script {
 
     function run() public {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        
+
         address deployer = vm.addr(deployerPrivateKey);
         address multisig = vm.envAddress("MULTISIG");
-        
+
         address team = vm.envAddress("TEAM_ADDRESS");
         address eco = vm.envAddress("ECO_ADDRESS");
         address treasury = vm.envAddress("TREASURY_ADDRESS");
@@ -48,7 +48,7 @@ contract DeployScript is Script {
         console.log("========================================");
         console.log("Deployer:", deployer);
         console.log("Multisig:", multisig);
-        
+
         vm.startBroadcast(deployerPrivateKey);
 
         // ============================================
@@ -61,12 +61,7 @@ contract DeployScript is Script {
         address[] memory executors = new address[](1);
         executors[0] = address(0);
 
-        TimelockController timelock = new TimelockController(
-            TIMELOCK_DELAY,
-            proposers,
-            executors,
-            deployer  
-        );
+        TimelockController timelock = new TimelockController(TIMELOCK_DELAY, proposers, executors, deployer);
         console.log("TimelockController:", address(timelock));
         console.log("Timelock delay:", TIMELOCK_DELAY);
 
@@ -90,7 +85,7 @@ contract DeployScript is Script {
 
         sCURToken.addMinter(address(revenue));
         console.log("RevenueRebatePool added as minter for sCUR");
-        
+
         IncentiveGauge gauge = new IncentiveGauge(
             address(curToken), address(sCURToken), address(staking), address(veLock), address(revenue)
         );
@@ -152,7 +147,7 @@ contract DeployScript is Script {
         // =========================================================
         // Transfer ownership to Timelock
         // =========================================================
-        
+
         curToken.transferOwnership(address(timelock));
         console.log("CUR ownership -> timelock");
 
@@ -182,10 +177,7 @@ contract DeployScript is Script {
         // =========================================================
 
         bytes32 defaultAdminRole = timelock.DEFAULT_ADMIN_ROLE();
-        require(
-            timelock.hasRole(defaultAdminRole, deployer),
-            "Deployer is not Timelock admin"
-        );
+        require(timelock.hasRole(defaultAdminRole, deployer), "Deployer is not Timelock admin");
 
         timelock.grantRole(defaultAdminRole, multisig);
         console.log("Multisig granted Timelock admin role");
@@ -206,20 +198,11 @@ contract DeployScript is Script {
         require(nftChecker.owner() == address(timelock), "NFTChecker owner mismatch");
         require(airdrop.owner() == address(timelock), "Airdrop owner mismatch");
 
-        require(
-            timelock.hasRole(timelock.PROPOSER_ROLE(), multisig),
-            "Multisig proposer missing"
-        );
+        require(timelock.hasRole(timelock.PROPOSER_ROLE(), multisig), "Multisig proposer missing");
 
-        require(
-            timelock.hasRole(timelock.EXECUTOR_ROLE(), address(0)),
-            "Open executor missing"
-        );
+        require(timelock.hasRole(timelock.EXECUTOR_ROLE(), address(0)), "Open executor missing");
 
-        require(
-            !timelock.hasRole(defaultAdminRole, deployer),
-            "Deployer still has Timelock admin"
-        );
+        require(!timelock.hasRole(defaultAdminRole, deployer), "Deployer still has Timelock admin");
 
         console.log("========================================");
         console.log("Deployment completed successfully");

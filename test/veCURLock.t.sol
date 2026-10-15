@@ -93,7 +93,6 @@ contract MockNFTChecker {
     }
 }
 
-
 contract veCURLockTest is Test {
     veCURLock public veLock;
     CURToken public curToken;
@@ -128,7 +127,6 @@ contract veCURLockTest is Test {
     event EarlyUnlocked(address indexed user, uint256 amount, uint256 penalty);
     event IncentiveGaugeUpdated(address indexed oldGauge, address indexed newGauge);
 
-
     // ============================================
     // Setup
     // ============================================
@@ -151,7 +149,6 @@ contract veCURLockTest is Test {
         vm.stopPrank();
 
         sCURToken.mint(alice, 5000 * 1e18);
-
     }
 
     // ============================================
@@ -172,7 +169,6 @@ contract veCURLockTest is Test {
         new veCURLock(address(0), address(nftChecker), address(incentiveGauge));
     }
 
-   
     function test_Constructor_NFTCheckerZero() public {
         vm.prank(owner);
         vm.expectRevert(veCURLock.ZeroAddress.selector);
@@ -416,14 +412,12 @@ contract veCURLockTest is Test {
         vm.prank(alice);
         veLock.lock(DURATION_30);
 
-  
         vm.warp(block.timestamp + 31 days);
 
         vm.expectRevert(veCURLock.AlreadyExpired.selector);
         veLock.calculatePenalty(alice);
     }
 
-  
     // ============================================
     // EarlyUnlock Tests
     // ============================================
@@ -485,7 +479,6 @@ contract veCURLockTest is Test {
         emit EarlyUnlocked(alice, gaugeBalance, penalty);
         veLock.earlyUnlock();
     }
-
 
     // ============================================
     // GetMaxLockDuration Tests
@@ -675,7 +668,6 @@ contract veCURLockTest is Test {
         veLock.earlyUnlock();
     }
 
-   
     // ============================================
     // Edge Cases Tests
     // ============================================
@@ -774,10 +766,9 @@ contract veCURLockTest is Test {
         veLock.lock(DURATION_30);
 
         vm.warp(block.timestamp + DURATION_30 + 1);
-        
+
         vm.expectRevert(veCURLock.AlreadyExpired.selector);
         veLock.calculatePenalty(alice);
-   
     }
 
     function test_EdgeCase_Lock_WithMinimumAmount() public {

@@ -18,8 +18,8 @@ interface IIncentiveGauge {
     function getRemainingRewards() external view returns (uint256);
     function getCurrentEmissionRate() external view returns (uint256);
     function getUserAmount(address user) external view returns (uint256);
-    function flushIdleRewards() external; 
-  
+    function flushIdleRewards() external;
+
     event Deposit(address indexed user, uint256 amount);
     event Withdraw(address indexed user);
     event GetReward(address indexed user, uint256 reward);
@@ -29,5 +29,4 @@ interface IIncentiveGauge {
     event EmergencyWithdrawn(address indexed user, uint256 amount);
     event RewardsCleared(address indexed user, uint256 amount);
     event IdleRewardsFlushed(uint256 amount);
-    
 }

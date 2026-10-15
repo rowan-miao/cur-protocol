@@ -14,7 +14,7 @@ interface ICURStaking {
     function getTotalStaked() external view returns (uint256);
     function getMinimumStakeAmount() external view returns (uint256);
     function executePenalty(address user, uint256 curAmount) external;
-   
+
     event Staked(address indexed user, uint256 CURAmount, uint256 sCURAmount);
     event UnStaked(address indexed user, uint256 sCURAmount, uint256 CURAmount);
     event EnterGauge(address indexed user, uint256 sCURAmount);

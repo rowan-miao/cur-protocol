@@ -12,5 +12,4 @@ interface IRevenueRebatePool {
 
     event RevenueDeposited(address indexed user, uint256 amount);
     event UnallocatedEmissionRecorded(uint256 amount);
-
 }

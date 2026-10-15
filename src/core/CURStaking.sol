@@ -31,7 +31,6 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
 
     uint256 public constant MIN_STAKE_CUR = 1e12;
 
-  
     // ============================================
     // Events
     // ============================================
@@ -53,13 +52,13 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
 
     /// @notice Emitted when a penalty is executed on early unlock
     event PenaltyExecuted(address indexed user, uint256 CURAmount);
-    
+
     /// @notice Emitted when IncentiveGauge address is updated
     event GaugeUpdated(address indexed oldGauge, address indexed newGauge);
-    
+
     /// @notice Emitted when veCURLock address is updated
     event VeLockUpdated(address indexed oldVeLock, address indexed newVeLock);
-    
+
     /// @notice Emitted when RevenueRebatePool address is updated
     event RevenueRebatePoolUpdated(address indexed oldPool, address indexed newPool);
 
@@ -96,10 +95,9 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
 
     /// @notice Thrown when stake amount results in zero sCUR minted
     error ZeroSCURMinted();
-    
+
     /// @notice Thrown when unstake amount results in zero CUR redeemed
     error ZeroCURRedeemed();
-
 
     // ============================================
     // modifiers
@@ -111,7 +109,7 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
      */
     modifier onlyGauge() {
         if (msg.sender != address(gauge)) revert Unauthorized();
-       _;
+        _;
     }
 
     // ============================================
@@ -155,8 +153,8 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
         if (CURAmount == 0) revert ZeroAmount();
 
         uint256 minimumStake = getMinimumStakeAmount();
-        if(CURAmount < minimumStake) revert BelowMinimumStake(minimumStake);
-    
+        if (CURAmount < minimumStake) revert BelowMinimumStake(minimumStake);
+
         //转账CUR
         curToken.transferFrom(msg.sender, address(this), CURAmount);
         //铸造
@@ -179,7 +177,7 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
         //检查scur是否大于零
         if (sCURAmount == 0) revert ZeroAmount();
 
-        if(veLock.isLocked(msg.sender)) revert PositionLocked();
+        if (veLock.isLocked(msg.sender)) revert PositionLocked();
 
         uint256 userBalance = sCURToken.balanceOf(msg.sender);
         if (userBalance < sCURAmount) revert InsufficientFreeSCUR();
@@ -187,7 +185,7 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
         //销毁
         uint256 CURAmount = sCURToken.redeem(msg.sender, sCURAmount);
         if (CURAmount == 0) revert ZeroCURRedeemed();
-    
+
         curToken.transfer(msg.sender, CURAmount);
         //发送事件
         emit UnStaked(msg.sender, sCURAmount, CURAmount);
@@ -206,10 +204,10 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
         if (sCURAmount == 0) revert ZeroAmount();
 
         if (veLock.isLocked(msg.sender)) revert PositionLocked();
-        
+
         uint256 userBalance = sCURToken.balanceOf(msg.sender);
         if (userBalance < sCURAmount) revert InsufficientAmount();
-        
+
         sCURToken.transferFrom(msg.sender, address(gauge), sCURAmount);
 
         //通知矿池
@@ -226,15 +224,14 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
         //检查scuramount是否小于零
         if (sCURAmount == 0) revert ZeroAmount();
         //检查用户是否锁仓
-        if(veLock.isLocked(msg.sender)) revert PositionLocked();
-    
+        if (veLock.isLocked(msg.sender)) revert PositionLocked();
+
         //通知矿池
         gauge.withdraw(msg.sender, sCURAmount);
         //发送事件
         emit ExitGauge(msg.sender, sCURAmount);
     }
 
-    
     /**
      * @notice Transfers the penalty CUR amount to the RevenueRebatePool after early unlock
      * @dev Called by IncentiveGauge after sCUR has already been burned via burnGaugePenalty.
@@ -270,8 +267,6 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
         emit EmergencyWithdrawn(msg.sender, totalSCUR, CURAmount);
     }
 
-  
-
     // ============================================
     // View Functions
     // ============================================
@@ -293,9 +288,9 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
      *      - Rounding minimum: ceil(exchangeRate / PRECISION)
      *        (ensures sCURAmount > 0)
      * @return Minimum stake amount in CUR
-    */
+     */
     function getMinimumStakeAmount() public view returns (uint256) {
-        uint256 rate = sCURToken. getExchangeRate();
+        uint256 rate = sCURToken.getExchangeRate();
         uint256 roundingMinimum = (rate + PRECISION - 1) / PRECISION;
         return roundingMinimum > MIN_STAKE_CUR ? roundingMinimum : MIN_STAKE_CUR;
     }
@@ -330,7 +325,7 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
 
         address oldGauge = address(gauge);
         gauge = IIncentiveGauge(_gauge);
-        
+
         emit GaugeUpdated(oldGauge, _gauge);
     }
 

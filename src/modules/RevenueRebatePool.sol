@@ -103,8 +103,6 @@ contract RevenueRebatePool is Pausable, Ownable, ReentrancyGuard {
         totalUnallocatedEmission = 0;
     }
 
-    
-
     // ============================================
     // Revenue Collection
     // ============================================
@@ -120,16 +118,16 @@ contract RevenueRebatePool is Pausable, Ownable, ReentrancyGuard {
         totalRevenue += amount;
         emit RevenueDeposited(msg.sender, amount);
     }
-    
+
     /**
      * @notice Records unallocated emission from IncentiveGauge
      * @dev Only callable by IncentiveGauge when totalWeight == 0 (no stakers).
      *      Increases totalUnallocatedEmission accounting.
      * @param amount Amount of unallocated emission to record
      */
-    function recordUnallocatedEmission(uint256 amount) public onlyGauge{
-        if(amount == 0) revert ZeroAmount();
-        totalUnallocatedEmission += amount; 
+    function recordUnallocatedEmission(uint256 amount) public onlyGauge {
+        if (amount == 0) revert ZeroAmount();
+        totalUnallocatedEmission += amount;
         emit UnallocatedEmissionRecorded(amount);
     }
 
@@ -146,13 +144,12 @@ contract RevenueRebatePool is Pausable, Ownable, ReentrancyGuard {
         _injectToSCUR(amount);
     }
 
-    
     /**
      * @notice Internal logic to inject revenue into the sCUR pool
      * @dev Must be called within a nonReentrant context
      * @param amount Amount of CUR to inject
      */
-    function _injectToSCUR(uint256 amount) internal{
+    function _injectToSCUR(uint256 amount) internal {
         //检查amount是否大于0
         if (amount == 0) revert ZeroAmount();
         //检查totalRevenue是否有足够
@@ -160,7 +157,7 @@ contract RevenueRebatePool is Pausable, Ownable, ReentrancyGuard {
         if (address(curStaking) == address(0)) revert ZeroAddress();
 
         if (sCURToken.totalSupply() == 0) revert NoSCURSupply();
-    
+
         //检查cur是否充足
         uint256 balance = curToken.balanceOf(address(this));
         if (amount > balance) revert InsufficientBalance();
@@ -175,7 +172,6 @@ contract RevenueRebatePool is Pausable, Ownable, ReentrancyGuard {
         //发送注入事件
         emit RevenueInjected(amount);
     }
-
 
     /**
      * @notice Injects all accumulated revenue into sCUR pool
@@ -216,7 +212,6 @@ contract RevenueRebatePool is Pausable, Ownable, ReentrancyGuard {
         gauge = IIncentiveGauge(_gauge);
 
         emit GaugeUpdated(oldGauge, _gauge);
-
     }
 
     // ============================================

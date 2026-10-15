@@ -144,7 +144,6 @@ contract sCURTest is Test {
         vm.prank(owner);
         vm.expectRevert(sCUR.CannotRemoveStaking.selector);
         sCur.removeMinter(address(staking));
-
     }
 
     // ============================================
@@ -268,73 +267,71 @@ contract sCURTest is Test {
 
     function test_BurnGaugePenalty_Success() public {
         uint256 mintAmount = 1000 * 1e18;
-        
+
         vm.prank(minter);
         sCur.mint(address(mockGauge), mintAmount);
-        
+
         uint256 initialUnderlying = sCur.totalUnderlying();
         uint256 initialGaugeBalance = sCur.balanceOf(address(mockGauge));
         uint256 rate = sCur.getExchangeRate();
-        
+
         uint256 penalty = 100 * 1e18;
         uint256 expectedCurAmount = (penalty * rate) / PRECISION;
-        
+
         vm.prank(address(mockGauge));
         uint256 curAmount = sCur.burnGaugePenalty(penalty);
-        
+
         assertEq(curAmount, expectedCurAmount, "curAmount");
         assertEq(sCur.balanceOf(address(mockGauge)), initialGaugeBalance - penalty, "gauge balance");
         assertEq(sCur.totalUnderlying(), initialUnderlying - expectedCurAmount, "underlying");
     }
-    
+
     function test_BurnGaugePenalty_Event() public {
         vm.prank(minter);
         sCur.mint(address(mockGauge), 1000 * 1e18);
-        
+
         uint256 penalty = 100 * 1e18;
         uint256 rate = sCur.getExchangeRate();
         uint256 expectedCurAmount = (penalty * rate) / PRECISION;
-        
+
         vm.prank(address(mockGauge));
         vm.expectEmit(true, false, false, true);
         emit PenaltyBurned(address(mockGauge), penalty, expectedCurAmount);
         sCur.burnGaugePenalty(penalty);
     }
-    
-    
+
     function test_BurnGaugePenalty_RevertZero() public {
         vm.prank(address(mockGauge));
         vm.expectRevert(sCUR.ZeroAmount.selector);
         sCur.burnGaugePenalty(0);
     }
-    
+
     function test_BurnGaugePenalty_RevertNotGauge() public {
         vm.prank(alice);
         vm.expectRevert(sCUR.Unauthorized.selector);
         sCur.burnGaugePenalty(100 * 1e18);
     }
-    
+
     function test_BurnGaugePenalty_RevertPaused() public {
         vm.prank(minter);
         sCur.mint(address(mockGauge), 1000 * 1e18);
-        
+
         vm.prank(owner);
         sCur.pause();
-        
-        vm.prank(address(mockGauge));
-        vm.expectRevert();
-        sCur.burnGaugePenalty(100 * 1e18);
-    }
-    
-    function test_BurnGaugePenalty_RevertGaugeBalanceInsufficient() public {
-        vm.prank(minter);
-        sCur.mint(address(mockGauge), 50 * 1e18);
-        
+
         vm.prank(address(mockGauge));
         vm.expectRevert();
         sCur.burnGaugePenalty(100 * 1e18);
     }
 
+    function test_BurnGaugePenalty_RevertGaugeBalanceInsufficient() public {
+        vm.prank(minter);
+        sCur.mint(address(mockGauge), 50 * 1e18);
+
+        vm.prank(address(mockGauge));
+        vm.expectRevert();
+        sCur.burnGaugePenalty(100 * 1e18);
+    }
 
     // ============================================
     // burnGaugePenalty Tests
@@ -565,7 +562,7 @@ contract sCURTest is Test {
     function test_SetCurStaking_Success() public {
         vm.prank(owner);
         sCUR newSCur = new sCUR(address(mCur), address(0));
-    
+
         address newStaking = makeAddr("newStaking");
 
         vm.prank(owner);
@@ -578,7 +575,7 @@ contract sCURTest is Test {
     function test_SetCurStaking_Event() public {
         vm.prank(owner);
         sCUR newSCur = new sCUR(address(mCur), address(0));
-    
+
         address newStaking = makeAddr("newStaking");
 
         vm.prank(owner);
@@ -597,7 +594,7 @@ contract sCURTest is Test {
     }
 
     function test_SetCurStaking_StakingAlreadySet() public {
-       assertEq(sCur.CUR_STAKING(), address(staking));
+        assertEq(sCur.CUR_STAKING(), address(staking));
 
         address newStaking = makeAddr("newStaking");
 
@@ -609,7 +606,7 @@ contract sCURTest is Test {
     function test_SetCurStaking_NotOwner() public {
         vm.prank(owner);
         sCUR newSCur = new sCUR(address(mCur), address(0));
-    
+
         address newStaking = makeAddr("newStaking");
 
         vm.prank(alice);
@@ -617,11 +614,10 @@ contract sCURTest is Test {
         newSCur.setCurStaking(newStaking);
     }
 
-
     function test_SetCurStaking_CannotRemoveAfterSet() public {
         vm.prank(owner);
         sCUR newSCur = new sCUR(address(mCur), address(0));
-    
+
         address newStaking = makeAddr("newStaking");
 
         vm.prank(owner);
@@ -631,7 +627,6 @@ contract sCURTest is Test {
         vm.expectRevert(sCUR.CannotRemoveStaking.selector);
         newSCur.removeMinter(newStaking);
     }
-
 
     // ============================================
     // Pause Tests

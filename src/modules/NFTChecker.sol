@@ -120,11 +120,8 @@ contract NFTChecker is Pausable, Ownable {
      * @param _veLock Address of the veCURLock contract
      */
     constructor(address _veLock) Ownable(msg.sender) {
-        if(_veLock != address(0)) veLock = IveCURLock(_veLock);
+        if (_veLock != address(0)) veLock = IveCURLock(_veLock);
     }
-
-
- 
 
     // ============================================
     // Admin Functions
@@ -210,7 +207,7 @@ contract NFTChecker is Pausable, Ownable {
      * @param user Address of the user to unbind NFT for
      */
     function _unbind(address user) internal {
-        if(address(veLock) != address(0) && veLock.isLocked(user)) revert PositionLocked();
+        if (address(veLock) != address(0) && veLock.isLocked(user)) revert PositionLocked();
         UserBinding memory binding = userBindings[user];
         //检查用户是否绑定Nft
         if (!binding.isBound) revert NotBound();
@@ -226,19 +223,18 @@ contract NFTChecker is Pausable, Ownable {
     }
 
     /**
-     * @notice Proxy unbind called by veCURLock 
+     * @notice Proxy unbind called by veCURLock
      * @param user Address of the user to unbind NFT for
      */
     function unbindNFTFor(address user) external onlyVeLock {
         _unbind(user);
     }
 
-    
     // ============================================
-    // View Functions 
+    // View Functions
     // ============================================
 
-     /**
+    /**
      * @notice Verifies if a user owns a specific NFT
      * @dev Returns false if NFT contract is not whitelisted
      * @param user User address to check
@@ -285,10 +281,9 @@ contract NFTChecker is Pausable, Ownable {
      * @param user User address
      * @return tier NFT tier (0 if not bound)
      */
-    function getUserTier(address user) public view returns (uint8){
+    function getUserTier(address user) public view returns (uint8) {
         return userBindings[user].tier;
-
-    }  
+    }
 
     /**
      * @notice Checks if a user has a bound NFT

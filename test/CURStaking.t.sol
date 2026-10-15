@@ -71,11 +71,11 @@ contract MockIncentiveGauge {
 
 contract MockVeCURLock {
     mapping(address => bool) public locked;
-    
+
     function setLocked(address user, bool _locked) external {
         locked[user] = _locked;
     }
-    
+
     function isLocked(address user) external view returns (bool) {
         return locked[user];
     }
@@ -187,7 +187,8 @@ contract CURStakingTest is Test {
 
     function test_Constructor_AllowsZeroDependencies() public {
         vm.prank(owner);
-        CURStaking newStaking = new CURStaking(address(curToken), address(sCURToken), address(0), address(0), address(0));
+        CURStaking newStaking =
+            new CURStaking(address(curToken), address(sCURToken), address(0), address(0), address(0));
 
         assertEq(address(newStaking.curToken()), address(curToken));
         assertEq(address(newStaking.sCURToken()), address(sCURToken));
@@ -203,7 +204,7 @@ contract CURStakingTest is Test {
 
     function test_Stake_Success() public {
         uint256 curAmount = 1000 * 1e18;
-        
+
         uint256 beforeSCUR = sCURToken.balanceOf(alice);
         uint256 beforeCUR = curToken.balanceOf(address(staking));
 
@@ -211,7 +212,7 @@ contract CURStakingTest is Test {
         staking.stake(curAmount);
 
         uint256 expectedSCUR = (curAmount * PRECISION) / sCURToken.getExchangeRate();
-      
+
         assertEq(sCURToken.balanceOf(alice), beforeSCUR + expectedSCUR);
         assertEq(curToken.balanceOf(address(staking)), beforeCUR + curAmount);
     }
@@ -224,14 +225,9 @@ contract CURStakingTest is Test {
 
     function test_Stake_BelowMinimumStake(uint256 minimumStake) public {
         uint256 minimum = staking.getMinimumStakeAmount();
-    
+
         vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                CURStaking.BelowMinimumStake.selector,
-                minimum
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(CURStaking.BelowMinimumStake.selector, minimum));
         staking.stake(minimum - 1);
     }
 
@@ -240,7 +236,6 @@ contract CURStakingTest is Test {
         vm.expectRevert(CURStaking.ZeroAmount.selector);
         staking.stake(0);
     }
-
 
     function test_Stake_Event() public {
         uint256 curAmount = 1000 * 1e18;
@@ -283,9 +278,9 @@ contract CURStakingTest is Test {
 
         vm.prank(alice);
         staking.stake(curAmount);
-    
+
         veLock.setLocked(alice, true);
-    
+
         vm.prank(alice);
         vm.expectRevert(CURStaking.PositionLocked.selector);
         staking.unstake(curAmount);
@@ -306,13 +301,13 @@ contract CURStakingTest is Test {
     function test_Unstake_Partial() public {
         uint256 curAmount = 1000 * 1e18;
         uint256 unstakeAmount = 400 * 1e18;
-        
+
         vm.prank(alice);
         staking.stake(curAmount);
-  
+
         vm.prank(alice);
         staking.unstake(unstakeAmount);
-    
+
         assertEq(sCURToken.balanceOf(alice), curAmount - unstakeAmount);
         assertEq(curToken.balanceOf(address(staking)), curAmount - unstakeAmount);
     }
@@ -361,9 +356,9 @@ contract CURStakingTest is Test {
     function test_EnterGauge_WhenLocked() public {
         vm.prank(alice);
         staking.stake(1000 * 1e18);
-        
+
         veLock.setLocked(alice, true);
-        
+
         vm.prank(alice);
         vm.expectRevert(CURStaking.PositionLocked.selector);
         staking.enterGauge(1000 * 1e18);
@@ -394,7 +389,6 @@ contract CURStakingTest is Test {
         staking.exitGauge(500 * 1e18);
 
         assertEq(sCURToken.balanceOf(alice), 1000 * 1e18);
-    
     }
 
     function test_ExitGauge_ZeroAmount() public {
@@ -406,12 +400,12 @@ contract CURStakingTest is Test {
     function test_ExitGauge_WhenLocked() public {
         vm.prank(alice);
         staking.stake(1000 * 1e18);
-        
+
         vm.prank(alice);
         staking.enterGauge(1000 * 1e18);
-        
+
         veLock.setLocked(alice, true);
-        
+
         vm.prank(alice);
         vm.expectRevert(CURStaking.PositionLocked.selector);
         staking.exitGauge(1000 * 1e18);
@@ -444,7 +438,7 @@ contract CURStakingTest is Test {
         staking.pause();
 
         uint256 beforeCUR = curToken.balanceOf(alice);
-    
+
         vm.prank(alice);
         staking.emergencyWithdraw();
 
@@ -536,7 +530,7 @@ contract CURStakingTest is Test {
         vm.prank(address(gauge));
         vm.expectRevert(CURStaking.ZeroAmount.selector);
         staking.executePenalty(alice, 0);
-    }  
+    }
 
     function test_ExecutePenalty_RevertNotGauge() public {
         uint256 CURAmount = 1000 * 1e18;
@@ -566,7 +560,7 @@ contract CURStakingTest is Test {
 
     function test_GetMinimumStakeAmount() public {
         uint256 minimum = staking.getMinimumStakeAmount();
-        
+
         assertGe(minimum, staking.MIN_STAKE_CUR());
     }
 
@@ -700,12 +694,12 @@ contract CURStakingTest is Test {
 
     function test_SetRevenueRebatePool_Success() public {
         address newPool = makeAddr("newPool");
-        
+
         vm.prank(owner);
         vm.expectEmit(true, true, false, true);
         emit RevenueRebatePoolUpdated(address(revenuePool), newPool);
         staking.setRevenueRebatePool(newPool);
-        
+
         assertEq(address(staking.revenueRebatePool()), newPool);
     }
 
@@ -775,10 +769,10 @@ contract CURStakingTest is Test {
     function test_Fuzz_Stake(uint256 CURAmount) public {
         uint256 minimum = staking.getMinimumStakeAmount();
         CURAmount = bound(CURAmount, minimum, INITIAL_BALANCE);
-        
+
         vm.prank(alice);
         staking.stake(CURAmount);
-        
+
         assertGt(sCURToken.balanceOf(alice), 0);
         assertEq(curToken.balanceOf(address(staking)), CURAmount);
     }
@@ -786,20 +780,18 @@ contract CURStakingTest is Test {
     function testFuzz_StakeUnstake(uint256 CURAmount) public {
         uint256 minimum = staking.getMinimumStakeAmount();
         CURAmount = bound(CURAmount, minimum, INITIAL_BALANCE);
-        
+
         uint256 beforeCUR = curToken.balanceOf(alice);
-        
+
         // Stake
         vm.prank(alice);
         staking.stake(CURAmount);
-        
+
         // Unstake
         vm.prank(alice);
         staking.unstake(CURAmount);
-        
+
         // 验证余额恢复
         assertEq(curToken.balanceOf(alice), beforeCUR);
     }
-
-    
 }

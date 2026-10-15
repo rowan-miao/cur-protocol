@@ -7,16 +7,14 @@ import "../src/core/sCUR.sol";
 import "../src/modules/IncentiveGauge.sol";
 
 contract MockCURStaking {
-    function executePenalty(address user, uint256 penalty) external {
-        
-    }
+    function executePenalty(address user, uint256 penalty) external {}
 }
 
 contract MockveCURLock {
-    IncentiveGauge public gauge;  
+    IncentiveGauge public gauge;
     mapping(address => uint256) public bonus;
 
-    function setGauge(address _gauge) external {   
+    function setGauge(address _gauge) external {
         gauge = IncentiveGauge(_gauge);
     }
 
@@ -50,10 +48,8 @@ contract MockveCURLock {
 }
 
 contract MockRevenueRebatePool {
-    function recordUnallocatedEmission(uint256 amount) external {
-    }
+    function recordUnallocatedEmission(uint256 amount) external {}
 }
-
 
 contract IncentiveGaugeTest is Test {
     CURToken public curToken;
@@ -76,7 +72,6 @@ contract IncentiveGaugeTest is Test {
     uint256 public constant EMISSION_RATE_Y4 = (5_000_000 * 1e18) / SECONDS_PER_YEAR;
     uint256 public constant INITIAL_REWARDS = 1_000_000 * 1e18;
 
-
     event Deposit(address indexed user, uint256 amount);
     event Withdraw(address indexed user, uint256 amount);
     event GetReward(address indexed user, uint256 reward);
@@ -97,7 +92,7 @@ contract IncentiveGaugeTest is Test {
         sCURToken = new sCUR(address(curToken), address(0));
         mockCurStake = new MockCURStaking();
         veLock = new MockveCURLock();
-        revenuePool = new  MockRevenueRebatePool();
+        revenuePool = new MockRevenueRebatePool();
 
         gauge = new IncentiveGauge(
             address(curToken), address(sCURToken), address(mockCurStake), address(veLock), address(revenuePool)
@@ -108,7 +103,7 @@ contract IncentiveGaugeTest is Test {
         sCURToken.setIncentiveGauge(address(gauge));
 
         curToken.transfer(address(gauge), 10_000_000 * 1e18);
-      
+
         curToken.transfer(alice, 100_000 * 1e18);
         curToken.transfer(bob, 100_000 * 1e18);
         curToken.transfer(charlie, 100_000 * 1e18);
@@ -141,7 +136,6 @@ contract IncentiveGaugeTest is Test {
         assertEq(gauge.totalWeight(), 0);
         assertEq(gauge.rewardPerToken(), 0);
         assertEq(gauge.accumulatedIdleRewards(), 0);
-    
     }
 
     function test_Constructor_RevertsWhenCurTokenZero() public {
@@ -165,7 +159,9 @@ contract IncentiveGaugeTest is Test {
     function test_Constructor_RevertsWhenVeLockZero() public {
         vm.prank(owner);
         vm.expectRevert(IncentiveGauge.ZeroAddress.selector);
-        new IncentiveGauge(address(curToken), address(sCURToken), address(mockCurStake), address(0), address(revenuePool));
+        new IncentiveGauge(
+            address(curToken), address(sCURToken), address(mockCurStake), address(0), address(revenuePool)
+        );
     }
 
     function test_Constructor_RevertsWhenRevenuePoolZero() public {
@@ -189,7 +185,7 @@ contract IncentiveGaugeTest is Test {
 
         assertEq(gauge.totalWeight(), amount);
 
-        (uint256 userAmount, uint256 userWeight, , ) = gauge.users(alice);
+        (uint256 userAmount, uint256 userWeight,,) = gauge.users(alice);
         assertEq(userAmount, amount);
         assertEq(userWeight, amount);
     }
@@ -228,7 +224,7 @@ contract IncentiveGaugeTest is Test {
         vm.prank(address(mockCurStake));
         gauge.deposit(alice, amount);
 
-        (uint256 userAmount, uint256 userWeight, , ) = gauge.users(alice);
+        (uint256 userAmount, uint256 userWeight,,) = gauge.users(alice);
         assertEq(userAmount, amount);
         assertEq(userWeight, amount * 2);
     }
@@ -288,7 +284,6 @@ contract IncentiveGaugeTest is Test {
         gauge.withdraw(alice, 0);
     }
 
-    
     // ============================================
     // ExecuteLock Tests
     // ============================================
@@ -309,7 +304,7 @@ contract IncentiveGaugeTest is Test {
         vm.prank(address(veLock));
         gauge.executeLock(alice);
 
-        (, uint256 weight, , ) = gauge.users(alice);
+        (, uint256 weight,,) = gauge.users(alice);
         assertEq(weight, amount * 2);
     }
 
@@ -334,7 +329,6 @@ contract IncentiveGaugeTest is Test {
         gauge.executeLock(alice);
     }
 
-
     // ============================================
     // ExecuteUnlock Tests
     // ============================================
@@ -351,7 +345,7 @@ contract IncentiveGaugeTest is Test {
 
         vm.prank(address(mockCurStake));
         gauge.deposit(alice, amount);
-        
+
         vm.prank(address(veLock));
         gauge.executeLock(alice);
 
@@ -360,10 +354,9 @@ contract IncentiveGaugeTest is Test {
 
         vm.prank(address(veLock));
         gauge.executeUnlock(alice);
-        
-        (, uint256 weight, , ) = gauge.users(alice);
+
+        (, uint256 weight,,) = gauge.users(alice);
         assertEq(weight, amount);
-    
     }
 
     function test_ExecuteUnlock_Unauthorized() public {
@@ -371,7 +364,6 @@ contract IncentiveGaugeTest is Test {
         vm.expectRevert(IncentiveGauge.Unauthorized.selector);
         gauge.executeUnlock(alice);
     }
-
 
     // ============================================
     // ExecuteEarlyUnlock Tests
@@ -397,7 +389,7 @@ contract IncentiveGaugeTest is Test {
         vm.prank(address(veLock));
         veLock.executeEarlyUnlock(alice, penalty);
 
-        (uint256 userAmount, uint256 userWeight, , ) = gauge.users(alice);
+        (uint256 userAmount, uint256 userWeight,,) = gauge.users(alice);
         assertEq(userWeight, userAmount);
         assertEq(gauge.totalWeight(), userAmount);
     }
@@ -418,14 +410,13 @@ contract IncentiveGaugeTest is Test {
 
         veLock.executeLock(alice);
 
-        uint256 oldWeight = (amount * bonus) / PRECISION;      
-        uint256 newWeight = (amount - penalty) * 1e18 / PRECISION;    
+        uint256 oldWeight = (amount * bonus) / PRECISION;
+        uint256 newWeight = (amount - penalty) * 1e18 / PRECISION;
 
         vm.expectEmit(true, false, false, true);
         emit EarlyUnlockExecuted(alice, penalty, oldWeight, newWeight);
         veLock.executeEarlyUnlock(alice, penalty);
     }
-
 
     function test_ExecuteEarlyUnlock_Unauthorized() public {
         uint256 penalty = 200 * 1e18;
@@ -434,9 +425,6 @@ contract IncentiveGaugeTest is Test {
         vm.expectRevert(IncentiveGauge.Unauthorized.selector);
         gauge.executeEarlyUnlock(alice, penalty);
     }
-
-   
-  
 
     // ============================================
     // Emergency Functions Tests
@@ -547,7 +535,7 @@ contract IncentiveGaugeTest is Test {
 
     function test_getReward_Success() public {
         uint256 amount = 1000 * 1e18;
-        
+
         vm.prank(owner);
         sCURToken.mint(address(gauge), amount);
 
@@ -628,7 +616,7 @@ contract IncentiveGaugeTest is Test {
     function test_FlushIdleRewards_ZeroAmount() public {
         vm.prank(alice);
         gauge.flushIdleRewards();
-    
+
         assertEq(gauge.accumulatedIdleRewards(), 0);
     }
 
@@ -644,7 +632,6 @@ contract IncentiveGaugeTest is Test {
         gauge.flushIdleRewards();
     }
 
-
     // ============================================
     //  View Functions Tests
     // ============================================
@@ -652,13 +639,10 @@ contract IncentiveGaugeTest is Test {
         assertEq(gauge.getPendingReward(alice), 0);
     }
 
-    
-
     function test_GetRemainingRewards() public view {
         assertEq(gauge.getRemainingRewards(), 10_000_000 * 1e18);
     }
 
-   
     // ============================================
     // Emission Rate Tests
     // ============================================
@@ -694,7 +678,7 @@ contract IncentiveGaugeTest is Test {
 
     function test_GetUserAmount() public {
         uint256 amount = 1000 * 1e18;
-        
+
         vm.prank(owner);
         sCURToken.mint(address(gauge), amount);
 
@@ -703,7 +687,6 @@ contract IncentiveGaugeTest is Test {
 
         assertEq(gauge.getUserAmount(alice), amount);
     }
-
 
     // ============================================
     // Pause Tests
@@ -801,7 +784,7 @@ contract IncentiveGaugeTest is Test {
     function test_EdgeCase_LockAndUnlock() public {
         uint256 amount = 1000 * 1e18;
         uint256 bonus = 2.0 * 1e18;
-        
+
         vm.prank(owner);
         veLock.setBonus(alice, bonus);
 
@@ -820,7 +803,7 @@ contract IncentiveGaugeTest is Test {
 
         vm.prank(address(veLock));
         gauge.executeUnlock(alice);
-       
+
         assertEq(gauge.totalWeight(), amount);
     }
 
@@ -838,7 +821,7 @@ contract IncentiveGaugeTest is Test {
 
         assertEq(gauge.totalWeight(), amount);
 
-        (uint256 userAmount, uint256 userWeight, , ) = gauge.users(alice);
+        (uint256 userAmount, uint256 userWeight,,) = gauge.users(alice);
         assertEq(userAmount, amount);
         assertEq(userWeight, amount);
     }

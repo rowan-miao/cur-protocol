@@ -40,7 +40,7 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
     uint256 public constant EMISSION_RATE_Y4 = (5_000_000 * 1e18) / SECONDS_PER_YEAR;
 
     uint256 public constant IDLE_REWARD_THRESHOLD = 1000 * 1e18;
-    
+
     uint256 public startTime;
     uint256 public rewardPerToken;
     uint256 public lastUpdateTime;
@@ -77,51 +77,50 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
 
     /// @notice Emitted when a user claims rewards
     event GetReward(address indexed user, uint256 reward);
-    
+
     /// @notice Emitted when a lock is executed
     event LockExecuted(address indexed user);
-   
-    /// @notice Emitted when an unlock is executed 
+
+    /// @notice Emitted when an unlock is executed
     event UnlockExecuted(address indexed user);
-   
+
     /// @notice Emitted when an early unlock is executed (penalty applied)
     event EarlyUnlockExecuted(address indexed user, uint256 penalty, uint256 oldWeight, uint256 newWeight);
-   
+
     /// @notice Emitted during emergency withdrawal
     event EmergencyWithdrawn(address indexed user, uint256 amount);
-   
+
     /// @notice Emitted when rewards are cleared during emergency
     event RewardsCleared(address indexed user, uint256 amount);
-    
+
     /// @notice Emitted when idle rewards are accumulated (no stakers)
     event IdleRewardsAccumulated(uint256 rewardAdded);
-    
+
     /// @notice Emitted when accumulated idle rewards are flushed to RevenueRebatePool
     event IdleRewardsFlushed(uint256 amount);
-    
+
     /// @notice Emitted when a user's pending rewards are confiscated due to early unlock
     event RewardsConfiscated(address indexed user, uint256 pendingReward);
-    
-   
+
     // ============================================
     // Errors
     // ============================================
 
     /// @notice Thrown when zero address is provided
     error ZeroAddress();
-   
+
     /// @notice Thrown when caller is not authorized
     error Unauthorized();
-   
+
     /// @notice Thrown when amount is zero
     error ZeroAmount();
-   
+
     /// @notice Thrown when reward is zero
     error ZeroReward();
-   
+
     /// @notice Thrown when amount exceeds available balance
     error InsufficientAmount();
-    
+
     /// @notice Thrown when user has no assets to withdraw
     error NoAssets();
 
@@ -137,7 +136,7 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
         if (msg.sender != address(curStake)) revert Unauthorized();
         _;
     }
-    
+
     /**
      * @notice Restricts function access to the veCURLock contract only
      * @dev Reverts with Unauthorized if caller is not veLock
@@ -146,7 +145,6 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
         if (msg.sender != address(veLock)) revert Unauthorized();
         _;
     }
-    
 
     // ============================================
     // Constructor
@@ -177,9 +175,7 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
 
         startTime = block.timestamp;
         lastUpdateTime = block.timestamp;
-        
     }
-    
 
     // ============================================
     // Internal Functions
@@ -204,7 +200,7 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
      * @dev Uses current emission rate multiplied by time delta
      * @return rewardAdded Amount of CUR emitted since last update
      */
-    function _calculateEmission() internal view returns (uint256 rewardAdded){
+    function _calculateEmission() internal view returns (uint256 rewardAdded) {
         uint256 timeDelta = block.timestamp - lastUpdateTime;
         if (timeDelta == 0) {
             return 0;
@@ -223,7 +219,7 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
 
         if (rewardAdded > 0 && totalWeight > 0) {
             rewardPerToken += (rewardAdded * PRECISION) / totalWeight;
-        }else{
+        } else {
             accumulatedIdleRewards += rewardAdded;
             emit IdleRewardsAccumulated(rewardAdded);
         }
@@ -231,7 +227,7 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
         lastUpdateTime = block.timestamp;
 
         if (user != address(0)) {
-           _updateUserReward(user);
+            _updateUserReward(user);
         }
     }
 
@@ -247,11 +243,10 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
 
         uint256 newWeight = (userInfo.amount * bonus) / PRECISION;
 
-        if(newWeight != userInfo.weight){
+        if (newWeight != userInfo.weight) {
             totalWeight = totalWeight - userInfo.weight + newWeight;
             userInfo.weight = newWeight;
         }
-        
     }
 
     /**
@@ -262,14 +257,13 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
     function _updateUserReward(address user) internal {
         UserInfo storage userInfo = users[user];
 
-        uint256 rewardDelta = rewardPerToken - userInfo.rewardPerTokenPaid; 
-        if(rewardDelta > 0 && userInfo.weight > 0){
-           uint256 pending = (userInfo.weight * rewardDelta) / PRECISION;
-           userInfo.pendingRewards += pending;
+        uint256 rewardDelta = rewardPerToken - userInfo.rewardPerTokenPaid;
+        if (rewardDelta > 0 && userInfo.weight > 0) {
+            uint256 pending = (userInfo.weight * rewardDelta) / PRECISION;
+            userInfo.pendingRewards += pending;
         }
 
         userInfo.rewardPerTokenPaid = rewardPerToken;
-
     }
 
     /**
@@ -285,18 +279,17 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
      * @dev Must be called within a nonReentrant context (deposit/withdraw).
      *      Emits IdleRewardsFlushed when rewards are actually flushed.
      */
-    function _flushIdleRewards() internal  {
+    function _flushIdleRewards() internal {
         uint256 amount = accumulatedIdleRewards;
-        if(amount == 0) return;
-        if(address(revenueRebatePool) == address(0)) revert ZeroAddress();
-        
+        if (amount == 0) return;
+        if (address(revenueRebatePool) == address(0)) revert ZeroAddress();
+
         accumulatedIdleRewards = 0;
         revenueRebatePool.recordUnallocatedEmission(amount);
 
         curToken.transfer(address(revenueRebatePool), amount);
         emit IdleRewardsFlushed(amount);
     }
-    
 
     // ============================================
     // Core Functions
@@ -318,7 +311,7 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
         UserInfo storage userInfo = users[user];
         userInfo.amount += amount;
 
-       _updateWeight(user);
+        _updateWeight(user);
 
         //发送事件
         emit Deposit(user, amount);
@@ -371,7 +364,7 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
     }
 
     // ============================================
-    // Lock Management Functions 
+    // Lock Management Functions
     // ============================================
 
     /**
@@ -417,7 +410,7 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
 
         UserInfo storage userInfo = users[user];
         uint256 oldWeight = userInfo.weight;
-         
+
         uint256 curAmount = 0;
         if (penalty > 0) {
             if (userInfo.amount < penalty) revert InsufficientAmount();
@@ -429,14 +422,14 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
 
         uint256 pendingReward = userInfo.pendingRewards;
         if (pendingReward > 0) {
-            userInfo.pendingRewards = 0;  
+            userInfo.pendingRewards = 0;
         }
 
         if (curAmount > 0) {
             curStake.executePenalty(user, curAmount);
         }
 
-        if (pendingReward > 0) {         
+        if (pendingReward > 0) {
             curToken.transfer(address(revenueRebatePool), pendingReward);
             emit RewardsConfiscated(user, pendingReward);
         }
@@ -457,7 +450,7 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
     function gaugeEmergencyWithdraw(address user) public onlyCurStake nonReentrant {
         UserInfo storage userInfo = users[user];
         uint256 amount = userInfo.amount;
-      
+
         if (amount == 0) revert NoAssets();
 
         totalWeight -= userInfo.weight;
@@ -480,7 +473,8 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
     function emergencyClearReward(address user) public onlyCurStake nonReentrant whenPaused {
         UserInfo storage userInfo = users[user];
 
-        uint256 pending = userInfo.pendingRewards + (userInfo.weight * (rewardPerToken - userInfo.rewardPerTokenPaid) / PRECISION);
+        uint256 pending =
+            userInfo.pendingRewards + (userInfo.weight * (rewardPerToken - userInfo.rewardPerTokenPaid) / PRECISION);
 
         userInfo.pendingRewards = 0;
         userInfo.rewardPerTokenPaid = rewardPerToken;
@@ -551,7 +545,4 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
     function unpause() public onlyOwner {
         _unpause();
     }
-    
-
-
 }
