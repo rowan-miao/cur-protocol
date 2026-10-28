@@ -67,6 +67,10 @@ contract MockIncentiveGauge {
     function getUserAmount(address user) public view returns (uint256) {
         return users[user].amount;
     }
+
+    function paused() external pure returns (bool) {
+        return false;
+    }
 }
 
 contract MockVeCURLock {
@@ -78,6 +82,14 @@ contract MockVeCURLock {
 
     function isLocked(address user) external view returns (bool) {
         return locked[user];
+    }
+
+    function emergencyBreakLock(address user) external view returns (uint256) {
+        return 0; 
+    }
+
+    function paused() external pure returns (bool) {
+        return false;
     }
 }
 
@@ -107,11 +119,11 @@ contract CURStakingTest is Test {
     event UnStaked(address indexed user, uint256 sCURAmount, uint256 CURAmount);
     event EnterGauge(address indexed user, uint256 sCURAmount);
     event ExitGauge(address indexed user, uint256 sCURAmount);
-    event EmergencyWithdrawn(address indexed user, uint256 totalSCUR, uint256 CURAmount);
+    event EmergencyWithdrawn(address indexed user, uint256 totalSCUR, uint256 actualSCURRedeemed);
     event PenaltyExecuted(address indexed user, uint256 CURAmount);
-    event GaugeUpdated(address indexed oldGauge, address indexed newGauge);
-    event VeLockUpdated(address indexed oldVeLock, address indexed newVeLock);
-    event RevenueRebatePoolUpdated(address indexed oldPool, address indexed newPool);
+    event GaugeUpdated(address indexed oldAddress, address indexed newAddress);
+    event VeLockUpdated(address indexed oldAddress, address indexed newAddress);
+    event RevenueRebatePoolUpdated(address indexed oldAddress, address indexed newAddress);
 
     // ============================================
     // Setup
@@ -134,6 +146,7 @@ contract CURStakingTest is Test {
         );
 
         sCURToken.addMinter(address(staking));
+        sCURToken.addMinter(address(this));
 
         vm.stopPrank();
 
@@ -223,18 +236,26 @@ contract CURStakingTest is Test {
         staking.stake(0);
     }
 
-    function test_Stake_BelowMinimumStake(uint256 minimumStake) public {
-        uint256 minimum = staking.getMinimumStakeAmount();
+    function test_Stake_BelowMinimumStake(uint256) public {
+        uint256 minimumStake = staking.getMinimumStakeAmount();
 
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(CURStaking.BelowMinimumStake.selector, minimum));
-        staking.stake(minimum - 1);
+        vm.expectRevert(abi.encodeWithSelector(CURStaking.BelowMinimumStake.selector, minimumStake));
+        staking.stake(minimumStake - 1);
     }
 
-    function test_Stake_ZeroSCURMinted() public {
+    function test_Stake_AfterExchangeRateGrowth() public {
         vm.prank(alice);
-        vm.expectRevert(CURStaking.ZeroAmount.selector);
-        staking.stake(0);
+        staking.stake(1000 * 1e18);
+    
+        sCURToken.updateExchangeRate(500 * 1e18);
+
+        assertEq(sCURToken.getExchangeRate(), 1.5e18);
+ 
+        vm.prank(bob);
+        staking.stake(1500 * 1e18);
+    
+        assertEq(sCURToken.balanceOf(bob), 1000 * 1e18);
     }
 
     function test_Stake_Event() public {
@@ -456,11 +477,11 @@ contract CURStakingTest is Test {
         staking.pause();
 
         uint256 aliceSCUR = sCURToken.balanceOf(alice);
-        uint256 expectedCUR = aliceSCUR * sCURToken.getExchangeRate() / PRECISION;
+        uint256 expectedActualSCUR = aliceSCUR;
 
         vm.prank(alice);
         vm.expectEmit(true, false, false, true);
-        emit EmergencyWithdrawn(alice, aliceSCUR, expectedCUR);
+        emit EmergencyWithdrawn(alice, aliceSCUR, expectedActualSCUR);
         staking.emergencyWithdraw();
     }
 
@@ -468,7 +489,7 @@ contract CURStakingTest is Test {
         assertFalse(staking.paused());
 
         vm.prank(alice);
-        vm.expectRevert();
+        vm.expectRevert(CURStaking.SystemNotPaused.selector);
         staking.emergencyWithdraw();
     }
 
@@ -558,7 +579,7 @@ contract CURStakingTest is Test {
         assertEq(staking.getTotalStaked(), 3000 * 1e18);
     }
 
-    function test_GetMinimumStakeAmount() public {
+    function test_GetMinimumStakeAmount() public view {
         uint256 minimum = staking.getMinimumStakeAmount();
 
         assertGe(minimum, staking.MIN_STAKE_CUR());
@@ -608,8 +629,8 @@ contract CURStakingTest is Test {
         staking.pause();
 
         vm.prank(alice);
-        vm.expectRevert();
         staking.unstake(500 * 1e18);
+        assertEq(sCURToken.balanceOf(alice), 500 * 1e18);
     }
 
     function test_EnterGauge_WhenPaused() public {
@@ -634,8 +655,9 @@ contract CURStakingTest is Test {
         staking.pause();
 
         vm.prank(alice);
-        vm.expectRevert();
         staking.exitGauge(500 * 1e18);
+
+        assertEq(sCURToken.balanceOf(alice), 1000 * 1e18);
     }
 
     // ============================================
@@ -657,6 +679,18 @@ contract CURStakingTest is Test {
         vm.prank(owner);
         vm.expectRevert(CURStaking.ZeroAddress.selector);
         staking.setGauge(address(0));
+    }
+
+    function test_SetGauge_RevertsWhenSelfAddress() public {
+        vm.prank(owner);
+        vm.expectRevert(CURStaking.InvalidAddress.selector);
+        staking.setGauge(address(staking)); 
+    }
+
+    function test_SetGauge_RevertsWhenSameAddress() public {
+        vm.prank(owner);
+        vm.expectRevert(CURStaking.SameAddress.selector);
+        staking.setGauge(address(gauge));
     }
 
     function test_SetGauge_RevertsWhenNotOwner() public {
@@ -684,6 +718,18 @@ contract CURStakingTest is Test {
         staking.setVeLock(address(0));
     }
 
+    function test_SetVeLock_RevertsWhenSelfAddress() public {
+        vm.prank(owner);
+        vm.expectRevert(CURStaking.InvalidAddress.selector);
+        staking.setVeLock(address(staking)); 
+    }
+
+    function test_SetVeLock_RevertsWhenSameAddress() public {
+        vm.prank(owner);
+        vm.expectRevert(CURStaking.SameAddress.selector);
+        staking.setVeLock(address(veLock));
+    }
+
     function test_SetVeLock_WhenNotOwner() public {
         address newVeLock = makeAddr("newVeLock");
 
@@ -707,6 +753,26 @@ contract CURStakingTest is Test {
         vm.prank(owner);
         vm.expectRevert(CURStaking.ZeroAddress.selector);
         staking.setRevenueRebatePool(address(0));
+    }
+
+    function test_SetRevenueRebatePool_RevertsWhenSelfAddress() public {
+        vm.prank(owner);
+        vm.expectRevert(CURStaking.InvalidAddress.selector);
+        staking.setRevenueRebatePool(address(staking));
+    }
+
+    function test_SetRevenueRebatePool_RevertsWhenSameAddress() public {
+        vm.prank(owner);
+        vm.expectRevert(CURStaking.SameAddress.selector);
+        staking.setRevenueRebatePool(address(revenuePool));
+    }
+
+    function test_SetRevenueRebatePool_RevertsWhenNotOwner() public {
+        address newPool = makeAddr("newPool");
+
+        vm.prank(alice);
+        vm.expectRevert();
+        staking.setRevenueRebatePool(newPool);
     }
 
     // ============================================

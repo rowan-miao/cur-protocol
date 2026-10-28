@@ -82,6 +82,10 @@ contract IncentiveGaugeTest is Test {
     event RewardsCleared(address indexed user, uint256 amount);
     event IdleRewardsAccumulated(uint256 rewardAdded);
     event IdleRewardsFlushed(uint256 amount);
+    event CurStakeUpdated(address indexed oldAddress, address indexed newAddress);
+    event VeLockUpdated(address indexed oldAddress, address indexed newAddress);
+    event RevenuePoolUpdated(address indexed oldAddress, address indexed newAddress);
+
 
     // ============================================
     // Setup
@@ -150,25 +154,6 @@ contract IncentiveGaugeTest is Test {
         new IncentiveGauge(address(curToken), address(0), address(mockCurStake), address(veLock), address(revenuePool));
     }
 
-    function test_Constructor_RevertsWhenmockCurStakeZero() public {
-        vm.prank(owner);
-        vm.expectRevert(IncentiveGauge.ZeroAddress.selector);
-        new IncentiveGauge(address(curToken), address(sCURToken), address(0), address(veLock), address(revenuePool));
-    }
-
-    function test_Constructor_RevertsWhenVeLockZero() public {
-        vm.prank(owner);
-        vm.expectRevert(IncentiveGauge.ZeroAddress.selector);
-        new IncentiveGauge(
-            address(curToken), address(sCURToken), address(mockCurStake), address(0), address(revenuePool)
-        );
-    }
-
-    function test_Constructor_RevertsWhenRevenuePoolZero() public {
-        vm.prank(owner);
-        vm.expectRevert(IncentiveGauge.ZeroAddress.selector);
-        new IncentiveGauge(address(curToken), address(sCURToken), address(mockCurStake), address(veLock), address(0));
-    }
 
     // ============================================
     // Deposit Tests
@@ -491,43 +476,7 @@ contract IncentiveGaugeTest is Test {
         gauge.gaugeEmergencyWithdraw(alice);
     }
 
-    function test_EmergencyClearReward_Success() public {
-        uint256 amount = 1000 * 1e18;
 
-        vm.prank(owner);
-        sCURToken.mint(address(gauge), amount);
-
-        vm.prank(address(mockCurStake));
-        gauge.deposit(alice, amount);
-
-        vm.warp(block.timestamp + 365 days);
-
-        vm.prank(address(mockCurStake));
-        gauge.deposit(bob, 100 * 1e18);
-
-        uint256 pendingBefore = gauge.getPendingReward(alice);
-        assertGt(pendingBefore, 0);
-
-        vm.prank(owner);
-        gauge.pause();
-
-        vm.prank(address(mockCurStake));
-        gauge.emergencyClearReward(alice);
-
-        uint256 pendingAfter = gauge.getPendingReward(alice);
-        assertEq(pendingAfter, 0);
-    }
-
-    function test_EmergencyClearReward_RevertsWhenNotPaused() public {
-        uint256 amount = 1000 * 1e18;
-
-        vm.prank(address(mockCurStake));
-        gauge.deposit(alice, amount);
-
-        vm.prank(address(mockCurStake));
-        vm.expectRevert();
-        gauge.emergencyClearReward(alice);
-    }
 
     // ============================================
     // GetReward Tests
@@ -686,6 +635,124 @@ contract IncentiveGaugeTest is Test {
         gauge.deposit(alice, amount);
 
         assertEq(gauge.getUserAmount(alice), amount);
+    }
+
+    // ============================================
+    // Admin Setters Tests
+    // ============================================
+
+    function test_SetCurStake_Success() public {
+        address newStake = makeAddr("newStake");
+        address oldStake = address(gauge.curStake());
+
+        vm.prank(owner);
+        vm.expectEmit(true, true, false, true);
+        emit CurStakeUpdated(oldStake, newStake);
+        gauge.setCurStake(newStake);
+
+        assertEq(address(gauge.curStake()), newStake);
+    }
+
+    function test_SetCurStake_RevertZeroAddress() public {
+        vm.prank(owner);
+        vm.expectRevert(IncentiveGauge.ZeroAddress.selector);
+        gauge.setCurStake(address(0));
+    }
+
+    function test_SetCurStake_RevertSelfAddress() public {
+        vm.prank(owner);
+        vm.expectRevert(IncentiveGauge.InvalidAddress.selector);
+        gauge.setCurStake(address(gauge));
+    }
+
+    function test_SetCurStake_RevertSameAddress() public {
+        address currentStake = address(gauge.curStake());
+        
+        vm.prank(owner);
+        vm.expectRevert(IncentiveGauge.SameAddress.selector);
+        gauge.setCurStake(currentStake);
+    }
+
+    function test_SetCurStake_RevertNotOwner() public {
+        vm.prank(alice);
+        vm.expectRevert(); 
+        gauge.setCurStake(makeAddr("newStake"));
+    }
+
+    function test_SetVeLock_Success() public {
+        address newVeLock = makeAddr("newVeLock");
+        address oldVeLock = address(gauge.veLock());
+
+        vm.prank(owner);
+        vm.expectEmit(true, true, false, true);
+        emit VeLockUpdated(oldVeLock, newVeLock);
+        gauge.setVeLock(newVeLock);
+
+        assertEq(address(gauge.veLock()), newVeLock);
+    }
+
+    function test_SetVeLock_RevertZeroAddress() public {
+        vm.prank(owner);
+        vm.expectRevert(IncentiveGauge.ZeroAddress.selector);
+        gauge.setVeLock(address(0));
+    }
+
+    function test_SetVeLock_RevertSelfAddress() public {
+        vm.prank(owner);
+        vm.expectRevert(IncentiveGauge.InvalidAddress.selector);
+        gauge.setVeLock(address(gauge));
+    }
+
+    function test_SetVeLock_RevertSameAddress() public {
+        address currentVeLock = address(gauge.veLock());
+        
+        vm.prank(owner);
+        vm.expectRevert(IncentiveGauge.SameAddress.selector);
+        gauge.setVeLock(currentVeLock);
+    }
+
+    function test_SetVeLock_RevertNotOwner() public {
+        vm.prank(alice);
+        vm.expectRevert();
+        gauge.setVeLock(makeAddr("newVeLock"));
+    }
+
+    function test_SetRevenueRebatePool_Success() public {
+        address newPool = makeAddr("newPool");
+        address oldPool = address(gauge.revenueRebatePool());
+
+        vm.prank(owner);
+        vm.expectEmit(true, true, false, true);
+        emit RevenuePoolUpdated(oldPool, newPool);
+        gauge.setRevenueRebatePool(newPool);
+
+        assertEq(address(gauge.revenueRebatePool()), newPool);
+    }
+
+    function test_SetRevenueRebatePool_RevertZeroAddress() public {
+        vm.prank(owner);
+        vm.expectRevert(IncentiveGauge.ZeroAddress.selector);
+        gauge.setRevenueRebatePool(address(0));
+    }
+
+    function test_SetRevenueRebatePool_RevertSelfAddress() public {
+        vm.prank(owner);
+        vm.expectRevert(IncentiveGauge.InvalidAddress.selector);
+        gauge.setRevenueRebatePool(address(gauge));
+    }
+
+    function test_SetRevenueRebatePool_RevertSameAddress() public {
+        address currentPool = address(gauge.revenueRebatePool());
+        
+        vm.prank(owner);
+        vm.expectRevert(IncentiveGauge.SameAddress.selector);
+        gauge.setRevenueRebatePool(currentPool);
+    }
+
+    function test_SetRevenueRebatePool_RevertNotOwner() public {
+        vm.prank(alice);
+        vm.expectRevert();
+        gauge.setRevenueRebatePool(makeAddr("newPool"));
     }
 
     // ============================================

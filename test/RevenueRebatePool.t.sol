@@ -64,7 +64,7 @@ contract RevenueRebatePoolTest is Test {
     event RevenueDeposited(address indexed user, uint256 amount);
     event RevenueInjected(uint256 amount);
     event RevenueInjectedAll(uint256 amount);
-    event ThresholdUpdated(uint256 newthreshold);
+    event ThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
     event UnallocatedEmissionRecorded(uint256 amount);
     event GaugeUpdated(address indexed oldGauge, address indexed newGauge);
 
@@ -382,11 +382,12 @@ contract RevenueRebatePoolTest is Test {
     }
 
     function test_setNetThreshold_Event() public {
-        uint256 newThreshold = 500 * 1e18;
+        uint256 oldThreshold = revenuePool.threshold();
+        uint256 newThreshold = 2000 * 1e18;
 
         vm.prank(owner);
         vm.expectEmit(false, false, false, true);
-        emit ThresholdUpdated(newThreshold);
+        emit ThresholdUpdated(oldThreshold, newThreshold); 
         revenuePool.setNewthreshold(newThreshold);
     }
 
@@ -423,6 +424,19 @@ contract RevenueRebatePoolTest is Test {
         vm.prank(alice);
         vm.expectRevert();
         revenuePool.setGauge(makeAddr("newGauge"));
+    }
+
+    function test_SetGauge_SelfAddress() public {
+        vm.prank(owner);
+        vm.expectRevert(RevenueRebatePool.InvalidAddress.selector);
+        revenuePool.setGauge(address(revenuePool));
+    }
+
+    function test_SetGauge_SameAddress() public {
+        address currentGauge = address(revenuePool.gauge());
+        vm.prank(owner);
+        vm.expectRevert(RevenueRebatePool.SameAddress.selector);
+        revenuePool.setGauge(currentGauge);
     }
 
     // ============================================
@@ -545,18 +559,8 @@ contract RevenueRebatePoolTest is Test {
 
     function test_EdgeCase_ZeroThreshold() public {
         vm.prank(owner);
+        vm.expectRevert(RevenueRebatePool.InvalidThreshold.selector);
         revenuePool.setNewthreshold(0);
-
-        uint256 amount = 100 * 1e18;
-        vm.prank(alice);
-        staking.stake(amount);
-
-        vm.prank(alice);
-        revenuePool.depositRevenue(amount);
-
-        vm.prank(owner);
-        revenuePool.injectAll();
-        assertEq(revenuePool.totalRevenue(), 0);
     }
 
     function test_EdgeCase_InjectPartialThenInjectAll() public {

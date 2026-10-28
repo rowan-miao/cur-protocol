@@ -62,7 +62,7 @@ contract NFTCheckerTest is Test {
     uint8 public constant TIER_HIGH = 2;
 
     event ContractWhiteListed(address indexed nftContract, uint8 tier);
-    event ContractRemove(address indexed nftContract);
+    event ContractRemoved(address indexed nftContract);
     event NFTBound(address indexed user, address indexed nftContract, uint256 tokenId, uint8 tier);
     event NFTUnbound(address indexed user, address indexed nftContract, uint256 tokenId, uint8 tier);
     event VeLockUpdated(address indexed oldVeLock, address indexed newVeLock);
@@ -104,8 +104,8 @@ contract NFTCheckerTest is Test {
         assertEq(address(nftChecker.veLock()), address(mockVeLock));
         assertTrue(nftChecker.isWhitelisted(address(midNFT)));
         assertTrue(nftChecker.isWhitelisted(address(highNFT)));
-        assertEq(nftChecker.getNFTTier(address(midNFT)), TIER_MID);
-        assertEq(nftChecker.getNFTTier(address(highNFT)), TIER_HIGH);
+        assertEq(nftChecker.contractTiers(address(midNFT)), TIER_MID);
+        assertEq(nftChecker.contractTiers(address(highNFT)), TIER_HIGH);
     }
 
     // ============================================
@@ -119,7 +119,7 @@ contract NFTCheckerTest is Test {
         nftChecker.addWhiteListedContract(newNFT, TIER_MID);
 
         assertTrue(nftChecker.isWhitelisted(address(newNFT)));
-        assertEq(nftChecker.getNFTTier(newNFT), TIER_MID);
+        assertEq(nftChecker.contractTiers(newNFT), TIER_MID);
     }
 
     function test_addWhiteListedContract_Event() public {
@@ -163,7 +163,7 @@ contract NFTCheckerTest is Test {
         nftChecker.removeWhiteListedContract(address(newNFT));
 
         assertFalse(nftChecker.isWhitelisted(address(newNFT)));
-        assertEq(nftChecker.getNFTTier(newNFT), TIER_NONE);
+        assertEq(nftChecker.contractTiers(newNFT), TIER_NONE);
     }
 
     function test_removeWhiteListedContract_Event() public {
@@ -174,7 +174,7 @@ contract NFTCheckerTest is Test {
 
         vm.prank(owner);
         vm.expectEmit(true, false, false, false);
-        emit ContractRemove(address(newNFT));
+        emit ContractRemoved(address(newNFT));
         nftChecker.removeWhiteListedContract(address(newNFT));
     }
 
@@ -218,12 +218,11 @@ contract NFTCheckerTest is Test {
         vm.prank(alice);
         nftChecker.bindNFT(address(highNFT), 101);
 
-        (address nftContract, uint256 tokenId, uint8 tier, uint256 bindTime, bool isBound) =
+        (address nftContract, uint256 tokenId, uint256 bindTime, bool isBound) =
             nftChecker.userBindings(alice);
 
         assertEq(nftContract, address(highNFT));
         assertEq(tokenId, 101);
-        assertEq(tier, TIER_HIGH);
         assertEq(bindTime, block.timestamp);
         assertTrue(isBound);
         assertTrue(nftChecker.nftBound(address(highNFT), 101));
@@ -277,7 +276,7 @@ contract NFTCheckerTest is Test {
         vm.prank(alice);
         nftChecker.unbindNFT();
 
-        (,,,, bool isBound) = nftChecker.userBindings(alice);
+        (,,, bool isBound) = nftChecker.userBindings(alice);
 
         assertFalse(isBound);
         assertFalse(nftChecker.nftBound(address(highNFT), 101));
@@ -314,12 +313,12 @@ contract NFTCheckerTest is Test {
     // GetNFTTier Tests
     // ============================================
     function test_GetNFTTier_ReturnsTierForWhitelisted() public view {
-        assertEq(nftChecker.getNFTTier(address(midNFT)), TIER_MID);
-        assertEq(nftChecker.getNFTTier(address(highNFT)), TIER_HIGH);
+        assertEq(nftChecker.contractTiers(address(midNFT)), TIER_MID);
+        assertEq(nftChecker.contractTiers(address(highNFT)), TIER_HIGH);
     }
 
     function test_GetNFTTier_ReturnsNoneForNonWhitelisted() public view {
-        assertEq(nftChecker.getNFTTier(address(otherNFT)), TIER_NONE);
+        assertEq(nftChecker.contractTiers(address(otherNFT)), TIER_NONE);
     }
 
     // ============================================
@@ -344,6 +343,49 @@ contract NFTCheckerTest is Test {
         assertEq(list.length, 2);
         assertEq(list[0], address(midNFT));
         assertEq(list[1], address(highNFT));
+    }
+
+    // ============================================
+    // setVeLock Tests
+    // ============================================
+
+    function test_SetVeLock_Success() public {
+        address newVeLock = makeAddr("newVeLock");
+        address oldVeLock = address(nftChecker.veLock()); 
+        vm.prank(owner);
+        vm.expectEmit(true, true, false, true);
+        emit VeLockUpdated(oldVeLock, newVeLock);
+        nftChecker.setVeLock(newVeLock);
+
+        assertEq(address(nftChecker.veLock()), newVeLock);
+    }
+
+    function test_SetVeLock_RevertZeroAddress() public {
+        vm.prank(owner);
+        vm.expectRevert(NFTChecker.ZeroAddress.selector);
+        nftChecker.setVeLock(address(0));
+    }
+
+    function test_SetVeLock_RevertSelfAddress() public {
+        vm.prank(owner);
+        vm.expectRevert(NFTChecker.InvalidAddress.selector);
+        nftChecker.setVeLock(address(nftChecker));
+    }
+
+    function test_SetVeLock_RevertSameAddress() public {
+        address currentVeLock = address(nftChecker.veLock()); 
+        
+        vm.prank(owner);
+        vm.expectRevert(NFTChecker.SameAddress.selector);
+        nftChecker.setVeLock(currentVeLock); 
+    }
+
+    function test_SetVeLock_RevertNotOwner() public {
+        address newVeLock = makeAddr("newVeLock");
+
+        vm.prank(alice);
+        vm.expectRevert(); 
+        nftChecker.setVeLock(newVeLock);
     }
 
     // ============================================
@@ -390,8 +432,10 @@ contract NFTCheckerTest is Test {
         nftChecker.pause();
 
         vm.prank(alice);
-        vm.expectRevert();
         nftChecker.unbindNFT();
+
+        (,,, bool isBound) = nftChecker.userBindings(alice);
+        assertFalse(isBound);
     }
 
     // ============================================
@@ -408,9 +452,8 @@ contract NFTCheckerTest is Test {
         vm.prank(alice);
         nftChecker.bindNFT(address(midNFT), 2);
 
-        (,, uint8 tier,, bool isBound) = nftChecker.userBindings(alice);
+        (,,, bool isBound) = nftChecker.userBindings(alice);
         assertTrue(isBound);
-        assertEq(tier, TIER_MID);
     }
 
     function test_DifferentUsersBindDifferentNFTs() public {
@@ -423,8 +466,8 @@ contract NFTCheckerTest is Test {
         vm.prank(bob);
         nftChecker.bindNFT(address(highNFT), 200);
 
-        (,,,, bool isBoundAlice) = nftChecker.userBindings(alice);
-        (,,,, bool isBoundBob) = nftChecker.userBindings(bob);
+        (,,, bool isBoundAlice) = nftChecker.userBindings(alice);
+        (,,, bool isBoundBob) = nftChecker.userBindings(bob);
 
         assertTrue(isBoundAlice);
         assertTrue(isBoundBob);
@@ -442,7 +485,7 @@ contract NFTCheckerTest is Test {
         vm.prank(alice);
         nftChecker.bindNFT(address(highNFT), 100);
 
-        (address nftContract, uint256 tokenId,,,) = nftChecker.userBindings(alice);
+        (address nftContract, uint256 tokenId,,) = nftChecker.userBindings(alice);
         assertEq(nftContract, address(highNFT));
         assertEq(tokenId, 100);
     }
@@ -460,7 +503,7 @@ contract NFTCheckerTest is Test {
         nftChecker.addWhiteListedContract(newNFT, tier);
 
         assertTrue(nftChecker.isWhitelisted(newNFT));
-        assertEq(nftChecker.getNFTTier(newNFT), tier);
+        assertEq(nftChecker.contractTiers(newNFT), tier);
     }
 
     function testFuzz_BindNFT_ValidTokenId(uint256 tokenId) public {
@@ -473,7 +516,7 @@ contract NFTCheckerTest is Test {
         vm.prank(alice);
         nftChecker.bindNFT(address(midNFT), tokenId);
 
-        (, uint256 storedTokenId,,, bool isBound) = nftChecker.userBindings(alice);
+        (, uint256 storedTokenId,, bool isBound) = nftChecker.userBindings(alice);
         assertTrue(isBound);
         assertEq(storedTokenId, tokenId);
     }
@@ -499,7 +542,7 @@ contract NFTCheckerTest is Test {
             nftChecker.unbindNFT();
         }
 
-        (,,,, bool isBound) = nftChecker.userBindings(alice);
+        (,,, bool isBound) = nftChecker.userBindings(alice);
         assertFalse(isBound);
     }
 }

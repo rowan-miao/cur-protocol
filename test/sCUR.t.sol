@@ -529,30 +529,19 @@ contract sCURTest is Test {
         sCur.setIncentiveGauge(newGauge);
     }
 
-    function test_setIncentiveGauge_OnlyOwnerCanUpdate() public {
+
+    function test_setIncentiveGauge_RevertsWhenSelfAddress() public {
         vm.prank(owner);
-        sCur.setIncentiveGauge(newGauge);
-        assertEq(address(sCur.incentiveGauge()), newGauge);
-
-        address anotherGauge = makeAddr("anotherGauge");
-        vm.prank(alice);
-        vm.expectRevert();
-        sCur.setIncentiveGauge(anotherGauge);
-
-        assertEq(address(sCur.incentiveGauge()), newGauge);
+        vm.expectRevert(sCUR.InvalidAddress.selector);
+        sCur.setIncentiveGauge(address(sCur)); 
     }
 
-    function test_setIncentiveGauge_CanUpdateMultipleTimes() public {
-        address gauge1 = makeAddr("gauge1");
-        address gauge2 = makeAddr("gauge2");
-
+    function test_setIncentiveGauge_RevertsWhenSameAddress() public {
+        address currentGauge = address(sCur.incentiveGauge());
+    
         vm.prank(owner);
-        sCur.setIncentiveGauge(gauge1);
-        assertEq(address(sCur.incentiveGauge()), gauge1);
-
-        vm.prank(owner);
-        sCur.setIncentiveGauge(gauge2);
-        assertEq(address(sCur.incentiveGauge()), gauge2);
+        vm.expectRevert(sCUR.SameAddress.selector);
+        sCur.setIncentiveGauge(currentGauge);
     }
 
     // ============================================
@@ -626,6 +615,15 @@ contract sCURTest is Test {
         vm.prank(owner);
         vm.expectRevert(sCUR.CannotRemoveStaking.selector);
         newSCur.removeMinter(newStaking);
+    }
+   
+    function test_SetCurStaking_RevertsWhenSelfAddress() public {
+        vm.prank(owner);
+        sCUR newSCur = new sCUR(address(mCur), address(0));
+
+        vm.prank(owner);
+        vm.expectRevert(sCUR.InvalidAddress.selector);
+        newSCur.setCurStaking(address(newSCur));
     }
 
     // ============================================
