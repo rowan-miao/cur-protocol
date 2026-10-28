@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 
@@ -19,6 +20,7 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
  * - Pausable for emergency situations
  */
 contract Airdrop is Ownable, Pausable {
+    using SafeERC20 for IERC20;
     IERC20 public immutable curToken;
 
     uint256 public constant AIRDROP_AMOUNT = 1000 * 1e18;
@@ -141,7 +143,7 @@ contract Airdrop is Ownable, Pausable {
         totalClaimed += AIRDROP_AMOUNT;
         totalRecipients++;
 
-        curToken.transfer(msg.sender, AIRDROP_AMOUNT);
+        curToken.safeTransfer(msg.sender, AIRDROP_AMOUNT);
 
         emit Claimed(msg.sender, AIRDROP_AMOUNT);
     }
@@ -157,7 +159,7 @@ contract Airdrop is Ownable, Pausable {
      */
     function deposit(uint256 amount) public onlyOwner {
         if (amount == 0) revert ZeroAmount();
-        curToken.transferFrom(msg.sender, address(this), amount);
+        curToken.safeTransferFrom(msg.sender, address(this), amount);
         emit Deposited(amount);
     }
 

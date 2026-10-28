@@ -19,6 +19,7 @@ interface IsCUR {
     function transferFrom(address from, address to, uint256 amount) external returns (bool);
     function approve(address spender, uint256 amount) external returns (bool);
     function burnGaugePenalty(uint256 penalty) external returns (uint256);
+    function paused() external view returns (bool);
 
     event Mint(address indexed to, uint256 CURAmount, uint256 sCURAmount);
     event Redeem(address indexed from, uint256 CURAmount, uint256 sCURAmount);

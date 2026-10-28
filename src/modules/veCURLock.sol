@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "../interfaces/IsCUR.sol";
 import "../interfaces/INFTChecker.sol";
 import "../interfaces/IIncentiveGauge.sol";
+import "../interfaces/ICURStaking.sol";
 
 /**
  * @title veCURLock - Lock Bonus Manager
@@ -27,6 +28,7 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
     IsCUR public immutable sCURToken;
     INFTChecker public immutable nftChecker;
     IIncentiveGauge public incentiveGauge;
+    ICURStaking public curStaking;
 
     // ============================================
     // Constants
@@ -45,11 +47,7 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
     uint256 public constant BONUS_180 = 1.65e18;
     uint256 public constant BONUS_365 = 2.0e18;
     uint256 public constant BONUS_730 = 2.5e18;
-
-    uint256 public constant MIN_LOCK_DURATION = 30 days;
-    uint256 public constant MAX_LOCK_DURATION = 730 days;
-    uint256 public constant MIN_BONUS_FACTOR = 1e18;
-    uint256 public constant MAX_BONUS_FACTOR = 2.5e18;
+ 
     uint256 public constant PENALTY_RATE = 5000;
 
     uint256 public totalLocked;
@@ -87,8 +85,12 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
     /// @notice Emitted when a user unlocks early with penalty
     event EarlyUnlocked(address indexed user, uint256 amount, uint256 penalty);
     /// @notice Emitted when IncentiveGauge address is updated
-    event IncentiveGaugeUpdated(address indexed oldGauge, address indexed newGauge);
-
+    event IncentiveGaugeUpdated(address indexed oldAddress, address indexed newAddress);
+    /// @notice Emitted when the CURStaking contract address is updated
+    event CurStakingUpdated(address indexed oldAddress, address indexed newAddress);
+    /// @notice Emitted when a user's lock is forcibly broken during emergency withdrawal
+    event EmergencyUnlocked(address indexed user, uint256 amount);
+     
     // ============================================
     // Errors
     // ============================================
@@ -115,6 +117,25 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
     error NotBound();
     /// @notice Thrown when NFT is already bound by another user
     error AlreadyBound();
+    /// @notice Thrown when the caller is not authorized to execute the function
+    error Unauthorized();
+    /// @notice Thrown when an address parameter is invalid
+    error InvalidAddress(); 
+    /// @notice Thrown when the new address is identical to the existing one 
+    error SameAddress();
+
+    // ============================================
+    // Modifiers
+    // ============================================
+
+    /**
+     * @notice Restricts function access to the CURStaking contract only
+     * @dev Reverts with Unauthorized if the caller is not the configured curStaking address
+     */ 
+    modifier onlyCurStaking() {
+        if (msg.sender != address(curStaking)) revert Unauthorized();
+        _;
+    }
 
     // ============================================
     // Constructor
@@ -172,16 +193,21 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
      * @return maxLockDuration Maximum lock duration in seconds
      */
     function getMaxLockDuration(address user) public view returns (uint256 maxLockDuration) {
-        uint8 tier = nftChecker.getUserTier(user);
-        if (tier == 0) {
+        if (!nftChecker.isUserBound(user)) {
             return DURATION_180;
         }
 
-        if (tier == 2) {
+        uint8 tier = nftChecker.getUserTier(user);
+
+        if (tier == nftChecker.TIER_MID()) {
+            return DURATION_365;
+        }
+
+        if (tier == nftChecker.TIER_HIGH()) {
             return DURATION_730;
         }
 
-        return DURATION_365;
+        return DURATION_180;
     }
 
     // ============================================
@@ -228,7 +254,7 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
      * @notice Unlocks sCUR after lock period expires
      * @dev No penalty, called when lock has expired
      */
-    function unlock() public nonReentrant whenNotPaused {
+    function unlock() public nonReentrant {
         LockInfo storage lockInfo = locks[msg.sender];
         //检查用户是否锁仓
         if (!lockInfo.isLocked) revert NotLocked();
@@ -249,7 +275,7 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
      * @notice Early unlock with penalty
      * @dev Calculates penalty and notifies IncentiveGauge
      */
-    function earlyUnlock() public nonReentrant whenNotPaused {
+    function earlyUnlock() public nonReentrant {
         //获得用户锁仓信息
         LockInfo storage lockInfo = locks[msg.sender];
         ///查看用户是否锁仓
@@ -263,7 +289,9 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
         //更新totalLocked
         totalLocked -= lockInfo.amount;
         // 解除 NFT 绑定
-        nftChecker.unbindNFTFor(msg.sender);
+        if(nftChecker.isUserBound(msg.sender)){
+            nftChecker.unbindNFTFor(msg.sender);
+        }
 
         //通知incentiveGauge更改权重
         incentiveGauge.executeEarlyUnlock(msg.sender, penaltyAmount);
@@ -278,14 +306,37 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
      */
     function calculatePenalty(address user) public view returns (uint256 penalty) {
         LockInfo memory lockInfo = locks[user];
-        if (!lockInfo.isLocked) revert NotLocked();
-        if (block.timestamp >= lockInfo.endTime) revert AlreadyExpired();
+        if (!lockInfo.isLocked) return 0;
+        if (block.timestamp >= lockInfo.endTime) return 0;
 
         uint256 remaining = lockInfo.endTime - block.timestamp;
         uint256 totalTime = lockInfo.endTime - lockInfo.startTime;
 
         penalty = (lockInfo.amount * PENALTY_RATE * remaining) / totalTime / 10000;
 
+        return penalty;
+    }
+
+    /**
+     * @notice Forcibly breaks a user's lock during emergency withdrawal
+     * @dev Only callable by CURStaking. Clears all lock state to prevent ghost data.
+     *      If the lock has not expired, the corresponding early unlock penalty is calculated and returned.
+     *      The penalty amount is NOT deducted here; it is returned for the caller (CURStaking) to handle.
+     * @param user The address of the user whose lock should be broken
+     * @return penalty The sCUR penalty amount to be deducted (0 if not locked or already expired)
+     */
+    function emergencyBreakLock(address user) public onlyCurStaking returns (uint256 penalty){
+        LockInfo storage lockInfo = locks[user];
+        if(!lockInfo.isLocked) return 0;
+
+        uint256 amount = lockInfo.amount;
+
+        penalty = calculatePenalty(user);
+
+        lockInfo.isLocked = false;
+        totalLocked -= amount;
+
+        emit EmergencyUnlocked(user, amount);
         return penalty;
     }
 
@@ -325,7 +376,7 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
      */
     function isLocked(address user) public view returns (bool) {
         LockInfo memory lockInfo = locks[user];
-        return lockInfo.isLocked;
+        return lockInfo.isLocked && (block.timestamp < lockInfo.endTime);
     }
 
     // ============================================
@@ -336,13 +387,30 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
      * @notice Updates IncentiveGauge contract address
      * @param _incentiveGauge New IncentiveGauge address
      */
-    function setIncentiveGauge(address _incentiveGauge) public onlyOwner {
+    function setIncentiveGauge(address _incentiveGauge) external onlyOwner {
         if (_incentiveGauge == address(0)) revert ZeroAddress();
+        if (_incentiveGauge == address(this)) revert InvalidAddress(); 
+        if (_incentiveGauge == address(incentiveGauge)) revert SameAddress();
 
         address oldGauge = address(incentiveGauge);
         incentiveGauge = IIncentiveGauge(_incentiveGauge);
 
         emit IncentiveGaugeUpdated(oldGauge, _incentiveGauge);
+    }
+    
+    /**
+     * @notice Updates CURStaking contract address
+     * @param _curStaking New CURStaking address
+     */
+    function setCurStaking(address _curStaking) external onlyOwner {
+        if (_curStaking == address(0)) revert ZeroAddress();
+        if (_curStaking == address(this)) revert InvalidAddress(); 
+        if (_curStaking == address(curStaking)) revert SameAddress();
+
+        address oldStaking = address(curStaking);
+        curStaking = ICURStaking(_curStaking);
+
+        emit CurStakingUpdated(oldStaking, _curStaking);
     }
 
     // ============================================

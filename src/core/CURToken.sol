@@ -2,7 +2,6 @@
 pragma solidity ^0.8.28;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
@@ -12,7 +11,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  * @dev Implements ERC20 with burnable, pausable, and ownable extensions
  * @dev Total supply is fixed at 100,000,000 CUR with 18 decimals
  */
-contract CURToken is ERC20, ERC20Burnable, Pausable, Ownable {
+contract CURToken is ERC20, Pausable, Ownable {
     // ============================================
     // Constants
     // ============================================
@@ -20,16 +19,6 @@ contract CURToken is ERC20, ERC20Burnable, Pausable, Ownable {
     /// @notice Total supply of CUR tokens
     uint256 public constant TOTAL_SUPPLY = 100_000_000 * 1e18;
 
-    // ============================================
-    // Errors
-    // ============================================
-
-    /// @notice Thrown when zero address is provided
-    error ZeroAddress();
-    /// @notice Thrown when invalid amount (zero) is provided
-    error InvalidAmount();
-    /// @notice Thrown when minting would exceed total supply
-    error ExceedsTotalSupply();
 
     // ============================================
     // Constructor
@@ -70,43 +59,5 @@ contract CURToken is ERC20, ERC20Burnable, Pausable, Ownable {
         _unpause();
     }
 
-    // ============================================
-    // Core Functions
-    // ============================================
-
-    /**
-     * @notice Mints new CUR tokens to a specified address
-     * @dev Only callable by the contract owner
-     * @dev Increases the total supply by the minted amount
-     * @dev Used for initial distribution and emergency inflation (subject to governance)
-     * @param to The address that will receive the minted tokens
-     * @param amount The amount of tokens to mint (in wei)
-     */
-    function mint(address to, uint256 amount) public onlyOwner {
-        if (to == address(0)) revert ZeroAddress();
-        if (amount == 0) revert InvalidAmount();
-
-        if (totalSupply() + amount > TOTAL_SUPPLY) revert ExceedsTotalSupply();
-
-        _mint(to, amount);
-    }
-
-    // ============================================
-    // Internal Functions
-    // ============================================
-
-    /**
-     * @notice Hook executed before token transfers, minting, or burning
-     * @dev Overrides ERC20's `_update` to add pause functionality
-     * @dev ALL token movements are blocked when paused, including:
-     *      - Transfers between users (from != address(0) && to != address(0))
-     *      - Minting (from == address(0))
-     *      - Burning (to == address(0))
-     * @param from Source address (address(0) for minting)
-     * @param to Destination address (address(0) for burning)
-     * @param amount Amount of tokens being transferred, minted, or burned
-     */
-    function _update(address from, address to, uint256 amount) internal override whenNotPaused {
-        super._update(from, to, amount);
-    }
+   
 }

@@ -44,7 +44,6 @@ contract NFTChecker is Pausable, Ownable {
     struct UserBinding {
         address nftContract;
         uint256 tokenId;
-        uint8 tier;
         uint256 bindTime;
         bool isBound;
     }
@@ -53,12 +52,13 @@ contract NFTChecker is Pausable, Ownable {
     // State Variables
     // ============================================
 
-    mapping(address => bool) public whitelistedContracts;
-    mapping(address => uint8) public contractTiers;
+   
     mapping(address => UserBinding) public userBindings;
     mapping(address => mapping(uint256 => bool)) public nftBound;
+    mapping(address => uint8) public contractTiers;
 
     address[] public whitelistedContractsList;
+    mapping(address => uint256) private _whitelistIndex;
 
     // ============================================
     // Events
@@ -67,13 +67,13 @@ contract NFTChecker is Pausable, Ownable {
     /// @notice Emitted when an NFT contract is added to whitelist
     event ContractWhiteListed(address indexed nftContract, uint8 tier);
     /// @notice Emitted when an NFT contract is removed from whitelist
-    event ContractRemove(address indexed nftContract);
+    event ContractRemoved(address indexed nftContract);
     /// @notice Emitted when a user binds an NFT to their account
     event NFTBound(address indexed user, address indexed nftContract, uint256 tokenId, uint8 tier);
     /// @notice Emitted when a user unbinds an NFT
     event NFTUnbound(address indexed user, address indexed nftContract, uint256 tokenId, uint8 tier);
     /// @notice Emitted when veCURLock contract address is updated
-    event VeLockUpdated(address indexed oldVeLock, address indexed newVeLock);
+    event VeLockUpdated(address indexed oldAddress, address indexed newAddress);
 
     // ============================================
     // Errors
@@ -97,6 +97,11 @@ contract NFTChecker is Pausable, Ownable {
     error PositionLocked();
     /// @notice Thrown when the caller is not authorized
     error Unauthorized();
+   /// @notice Thrown when an address parameter is invalid
+    error InvalidAddress();
+    /// @notice Thrown when attempting to set an address to its current value 
+    error SameAddress();
+
 
     // ============================================
     // modifier
@@ -137,11 +142,11 @@ contract NFTChecker is Pausable, Ownable {
         if (nftContract == address(0)) revert ZeroAddress();
         if (tier != TIER_MID && tier != TIER_HIGH) revert InvalidTier();
 
-        if (!whitelistedContracts[nftContract]) {
+        if (contractTiers[nftContract] == TIER_NONE) {
             whitelistedContractsList.push(nftContract);
+            _whitelistIndex[nftContract] = whitelistedContractsList.length;
         }
 
-        whitelistedContracts[nftContract] = true;
         contractTiers[nftContract] = tier;
 
         emit ContractWhiteListed(nftContract, tier);
@@ -153,13 +158,28 @@ contract NFTChecker is Pausable, Ownable {
      * @param nftContract NFT contract address
      */
     function removeWhiteListedContract(address nftContract) public onlyOwner {
-        ///检查地址是否在白名单中
-        if (!whitelistedContracts[nftContract]) revert NotWhitelisted();
-        ///从mapping中删除
-        delete whitelistedContracts[nftContract];
+        if (contractTiers[nftContract] == TIER_NONE) revert NotWhitelisted();
+        uint256 indexPlusOne = _whitelistIndex[nftContract];
+
+        if (indexPlusOne == 0) revert NotWhitelisted();
+
+        uint256 index = indexPlusOne - 1;
+        uint256 lastIndex = whitelistedContractsList.length - 1;
+
+        if (index != lastIndex) {
+            address lastContract = whitelistedContractsList[lastIndex];
+            whitelistedContractsList[index] = lastContract;
+ 
+            _whitelistIndex[lastContract] = index + 1;
+        }
+
+
+        whitelistedContractsList.pop();
+
+        delete _whitelistIndex[nftContract];
         delete contractTiers[nftContract];
-        ///发送事件
-        emit ContractRemove(nftContract);
+   
+        emit ContractRemoved(nftContract);
     }
 
     // ============================================
@@ -174,7 +194,7 @@ contract NFTChecker is Pausable, Ownable {
      */
     function bindNFT(address nftContract, uint256 tokenId) public whenNotPaused {
         //检查用户是否在白名单中
-        if (!whitelistedContracts[nftContract]) revert NotWhitelisted();
+        if (contractTiers[nftContract] == TIER_NONE) revert NotWhitelisted();
         ///检查用户是否已绑定
         if (userBindings[msg.sender].isBound) revert UserAlreadyBound();
         //NFT是否绑定
@@ -182,23 +202,22 @@ contract NFTChecker is Pausable, Ownable {
         ///检查是否持有NFT
         address owner = IERC721(nftContract).ownerOf(tokenId);
         if (msg.sender != owner) revert NotOwner();
-        //获得tier等级
-        uint8 tier = contractTiers[nftContract];
+        
         //更新UserBinding
         nftBound[nftContract][tokenId] = true;
         userBindings[msg.sender] = UserBinding({
-            nftContract: nftContract, tokenId: tokenId, tier: tier, bindTime: block.timestamp, isBound: true
+            nftContract: nftContract, tokenId: tokenId, bindTime: block.timestamp, isBound: true
         });
 
         //发送事件
-        emit NFTBound(msg.sender, nftContract, tokenId, tier);
+        emit NFTBound(msg.sender, nftContract, tokenId, contractTiers[nftContract]);
     }
 
     /**
      * @notice Allows a user to unbind their own NFT
      * @dev Caller is msg.sender; subject to lock check
      */
-    function unbindNFT() public whenNotPaused {
+    function unbindNFT() public {
         _unbind(msg.sender);
     }
 
@@ -219,7 +238,7 @@ contract NFTChecker is Pausable, Ownable {
         //删除用户绑定信息
         delete userBindings[user];
         //发送事件
-        emit NFTUnbound(user, nftContract, tokenId, binding.tier);
+        emit NFTUnbound(user, nftContract, tokenId, contractTiers[nftContract]);
     }
 
     /**
@@ -243,21 +262,12 @@ contract NFTChecker is Pausable, Ownable {
      * @return True if user owns the NFT and contract is whitelisted
      */
     function verifyOwnership(address user, address nftContract, uint256 tokenId) public view returns (bool) {
-        if (!whitelistedContracts[nftContract]) return false;
+        if (contractTiers[nftContract] == TIER_NONE) return false;
 
         address owner = IERC721(nftContract).ownerOf(tokenId);
         return owner == user;
     }
 
-    /**
-     * @notice Gets the tier level of an NFT contract
-     * @param nftContract NFT contract address
-     * @return Tier level (0 = NONE, 1 = MID, 2 = HIGH)
-     */
-    function getNFTTier(address nftContract) public view returns (uint8) {
-        if (!whitelistedContracts[nftContract]) return TIER_NONE;
-        return contractTiers[nftContract];
-    }
 
     /**
      * @notice Checks if an NFT contract is whitelisted
@@ -265,7 +275,7 @@ contract NFTChecker is Pausable, Ownable {
      * @return True if contract is in whitelist
      */
     function isWhitelisted(address nftContract) public view returns (bool) {
-        return whitelistedContracts[nftContract];
+        return contractTiers[nftContract] != TIER_NONE;
     }
 
     /**
@@ -282,7 +292,10 @@ contract NFTChecker is Pausable, Ownable {
      * @return tier NFT tier (0 if not bound)
      */
     function getUserTier(address user) public view returns (uint8) {
-        return userBindings[user].tier;
+        UserBinding memory binding = userBindings[user];
+        if(!binding.isBound) return TIER_NONE;
+        return contractTiers[binding.nftContract];
+        
     }
 
     /**
@@ -299,8 +312,10 @@ contract NFTChecker is Pausable, Ownable {
      * @dev Only callable by the owner to update the protocol dependency
      * @param _veLock New veCURLock contract address
      */
-    function setVeLock(address _veLock) public onlyOwner {
+    function setVeLock(address _veLock) external onlyOwner {
         if (_veLock == address(0)) revert ZeroAddress();
+        if(_veLock == address(this)) revert InvalidAddress();
+        if(_veLock == address(veLock)) revert SameAddress();
 
         address oldVeLock = address(veLock);
         veLock = IveCURLock(_veLock);

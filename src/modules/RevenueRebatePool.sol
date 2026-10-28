@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "../interfaces/IsCUR.sol";
 import "../interfaces/ICURStaking.sol";
@@ -22,10 +23,14 @@ import "../interfaces/IIncentiveGauge.sol";
  * - Emergency pause functionality
  */
 contract RevenueRebatePool is Pausable, Ownable, ReentrancyGuard {
+    using SafeERC20 for IERC20;
     IERC20 public immutable curToken;
     IsCUR public immutable sCURToken;
     ICURStaking public immutable curStaking;
     IIncentiveGauge public gauge;
+
+    uint256 public constant MIN_THRESHOLD = 100 * 1e18;       // 100 CUR
+    uint256 public constant MAX_THRESHOLD = 1_000_000 * 1e18;
 
     uint256 public totalRevenue;
     uint256 public totalUnallocatedEmission;
@@ -42,11 +47,11 @@ contract RevenueRebatePool is Pausable, Ownable, ReentrancyGuard {
     /// @notice Emitted when all accumulated revenue is injected
     event RevenueInjectedAll(uint256 amount);
     /// @notice Emitted when injection threshold is updated
-    event ThresholdUpdated(uint256 newthreshold);
+    event ThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
     /// @notice Emitted when unallocated emission is recorded
     event UnallocatedEmissionRecorded(uint256 amount);
     /// @notice Emitted when IncentiveGauge address is updated
-    event GaugeUpdated(address indexed oldGauge, address indexed newGauge);
+    event GaugeUpdated(address indexed oldAddress, address indexed newAddress);
 
     // ============================================
     // Errors
@@ -66,6 +71,13 @@ contract RevenueRebatePool is Pausable, Ownable, ReentrancyGuard {
     error Unauthorized();
     /// @notice Thrown when sCUR total supply is zero (cannot inject)
     error NoSCURSupply();
+    /// @notice Thrown when a parameter value is outside the allowed threshold range
+    error InvalidThreshold();
+    /// @notice Thrown when an address parameter is invalid 
+    error InvalidAddress();
+    /// @notice Thrown when the new address is identical to the existing one 
+    error SameAddress();
+
 
     // ============================================
     // Modifiers
@@ -114,7 +126,7 @@ contract RevenueRebatePool is Pausable, Ownable, ReentrancyGuard {
      */
     function depositRevenue(uint256 amount) public nonReentrant whenNotPaused {
         if (amount == 0) revert ZeroAmount();
-        curToken.transferFrom(msg.sender, address(this), amount);
+        curToken.safeTransferFrom(msg.sender, address(this), amount);
         totalRevenue += amount;
         emit RevenueDeposited(msg.sender, amount);
     }
@@ -167,7 +179,7 @@ contract RevenueRebatePool is Pausable, Ownable, ReentrancyGuard {
 
         sCURToken.updateExchangeRate(amount);
 
-        curToken.transfer(address(curStaking), amount);
+        curToken.safeTransfer(address(curStaking), amount);
 
         //发送注入事件
         emit RevenueInjected(amount);
@@ -196,8 +208,12 @@ contract RevenueRebatePool is Pausable, Ownable, ReentrancyGuard {
      * @param newthreshold New threshold value (in CUR with 18 decimals)
      */
     function setNewthreshold(uint256 newthreshold) public onlyOwner {
+        if(newthreshold < MIN_THRESHOLD || newthreshold > MAX_THRESHOLD){
+            revert InvalidThreshold();
+        }
+        uint256 oldThreshold = threshold;
         threshold = newthreshold;
-        emit ThresholdUpdated(newthreshold);
+        emit ThresholdUpdated(oldThreshold, newthreshold);
     }
 
     /**
@@ -207,6 +223,8 @@ contract RevenueRebatePool is Pausable, Ownable, ReentrancyGuard {
      */
     function setGauge(address _gauge) external onlyOwner {
         if (_gauge == address(0)) revert ZeroAddress();
+        if(_gauge == address(this)) revert InvalidAddress();
+        if(_gauge == address(gauge)) revert SameAddress();
 
         address oldGauge = address(gauge);
         gauge = IIncentiveGauge(_gauge);

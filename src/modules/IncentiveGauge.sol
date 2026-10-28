@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "../interfaces/IsCUR.sol";
 import "../interfaces/IveCURLock.sol";
@@ -24,6 +25,7 @@ import "../interfaces/IRevenueRebatePool.sol";
  * - Emergency withdrawal functions for pause scenarios
  */
 contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
+    using SafeERC20 for IERC20;
     IERC20 public immutable curToken;
     IsCUR public immutable sCURToken;
     ICURStaking public curStake;
@@ -32,20 +34,22 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
 
     uint256 public constant PRECISION = 1e18;
 
-    uint256 public constant SECONDS_PER_YEAR = 365 days;
+    uint256 public constant YEAR = 365 days;
 
-    uint256 public constant EMISSION_RATE_Y1 = (15_000_000 * 1e18) / SECONDS_PER_YEAR;
-    uint256 public constant EMISSION_RATE_Y2 = (12_000_000 * 1e18) / SECONDS_PER_YEAR;
-    uint256 public constant EMISSION_RATE_Y3 = (8_000_000 * 1e18) / SECONDS_PER_YEAR;
-    uint256 public constant EMISSION_RATE_Y4 = (5_000_000 * 1e18) / SECONDS_PER_YEAR;
+    uint256 public constant ALLOCATION_Y1 = 15_000_000 * 1e18;
+    uint256 public constant ALLOCATION_Y2 = 12_000_000 * 1e18;
+    uint256 public constant ALLOCATION_Y3 = 8_000_000 * 1e18;
+    uint256 public constant ALLOCATION_Y4 = 5_000_000 * 1e18;
 
+    uint256 public constant MAX_EMISSION = 40_000_000 * 1e18;
     uint256 public constant IDLE_REWARD_THRESHOLD = 1000 * 1e18;
-
+    
     uint256 public startTime;
     uint256 public rewardPerToken;
     uint256 public lastUpdateTime;
     uint256 public totalWeight;
     uint256 public accumulatedIdleRewards;
+    uint256 public totalEmitted;
 
     // ============================================
     // Structs
@@ -90,9 +94,6 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
     /// @notice Emitted during emergency withdrawal
     event EmergencyWithdrawn(address indexed user, uint256 amount);
 
-    /// @notice Emitted when rewards are cleared during emergency
-    event RewardsCleared(address indexed user, uint256 amount);
-
     /// @notice Emitted when idle rewards are accumulated (no stakers)
     event IdleRewardsAccumulated(uint256 rewardAdded);
 
@@ -101,6 +102,15 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
 
     /// @notice Emitted when a user's pending rewards are confiscated due to early unlock
     event RewardsConfiscated(address indexed user, uint256 pendingReward);
+
+    /// @notice Emitted when the CURStaking contract address is updated
+    event CurStakeUpdated(address indexed oldAddress, address indexed newAddress);
+
+    /// @notice Emitted when the veCURLock contract address is updated
+    event VeLockUpdated(address indexed oldAddress, address indexed newAddress);
+
+    /// @notice Emitted when the RevenueRebatePool contract address is updated
+    event RevenuePoolUpdated(address indexed oldAddress, address indexed newAddress);
 
     // ============================================
     // Errors
@@ -123,6 +133,13 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
 
     /// @notice Thrown when user has no assets to withdraw
     error NoAssets();
+
+    /// @notice Thrown when an invalid address is provided
+    error InvalidAddress(); 
+
+    /// @notice Thrown when the new address is identical to the current one
+    error SameAddress();
+
 
     // ============================================
     // modifiers
@@ -163,15 +180,13 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
     {
         if (_curToken == address(0)) revert ZeroAddress();
         if (_sCURToken == address(0)) revert ZeroAddress();
-        if (_curStake == address(0)) revert ZeroAddress();
-        if (_veLock == address(0)) revert ZeroAddress();
-        if (_revenueRebatePool == address(0)) revert ZeroAddress();
 
         curToken = IERC20(_curToken);
         sCURToken = IsCUR(_sCURToken);
-        curStake = ICURStaking(_curStake);
-        veLock = IveCURLock(_veLock);
-        revenueRebatePool = IRevenueRebatePool(_revenueRebatePool);
+
+        if (_curStake != address(0)) curStake = ICURStaking(_curStake);
+        if (_veLock != address(0)) veLock = IveCURLock(_veLock);
+        if (_revenueRebatePool != address(0)) revenueRebatePool = IRevenueRebatePool(_revenueRebatePool);
 
         startTime = block.timestamp;
         lastUpdateTime = block.timestamp;
@@ -187,11 +202,12 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
      * @return Current emission rate (CUR per second)
      */
     function _getCurrentEmissionRate() internal view returns (uint256) {
+        if (block.timestamp <= startTime) return ALLOCATION_Y1 / YEAR;
         uint256 elapsed = block.timestamp - startTime;
-        if (elapsed < 365 days) return EMISSION_RATE_Y1;
-        if (elapsed < 730 days) return EMISSION_RATE_Y2;
-        if (elapsed < 1095 days) return EMISSION_RATE_Y3;
-        if (elapsed < 1460 days) return EMISSION_RATE_Y4;
+        if (elapsed < YEAR) return ALLOCATION_Y1 / YEAR;
+        if (elapsed < 2 * YEAR) return ALLOCATION_Y2 / YEAR;
+        if (elapsed < 3 * YEAR) return ALLOCATION_Y3 / YEAR;
+        if (elapsed < 4 * YEAR) return ALLOCATION_Y4 / YEAR;
         return 0;
     }
 
@@ -201,12 +217,35 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
      * @return rewardAdded Amount of CUR emitted since last update
      */
     function _calculateEmission() internal view returns (uint256 rewardAdded) {
-        uint256 timeDelta = block.timestamp - lastUpdateTime;
-        if (timeDelta == 0) {
+        uint256 timeNow = block.timestamp;
+        
+        if (timeNow <= lastUpdateTime || timeNow <= startTime) {
             return 0;
         }
-        rewardAdded = _getCurrentEmissionRate() * timeDelta;
-        return rewardAdded;
+
+        uint256 from = lastUpdateTime > startTime ? startTime : lastUpdateTime;
+        uint256 elapsedStart = from - startTime;
+        uint256 elapsedEnd = timeNow - startTime;
+
+        uint256[5] memory boundaries = [uint256(0), YEAR, YEAR *2, YEAR * 3, YEAR * 4];
+        uint256[4] memory allocations = [ALLOCATION_Y1, ALLOCATION_Y2, ALLOCATION_Y3, ALLOCATION_Y4];
+
+        for(uint256 i = 0; i < 4; i++){
+            uint256 yearStart = boundaries[i];
+            uint256 yearEnd = boundaries[i + 1];
+
+            if (elapsedEnd <= yearStart) break;
+
+            uint256 overlapStart = elapsedStart > yearStart ? elapsedStart : yearStart;
+            uint256 overlapEnd = elapsedEnd < yearEnd ? elapsedEnd : yearEnd;
+
+            if (overlapStart >= overlapEnd) continue;
+
+            uint256 emissionAtStart = allocations[i] * (overlapStart - yearStart) / YEAR;
+            uint256 emissionAtEnd = allocations[i] * (overlapEnd - yearStart) / YEAR;
+            rewardAdded += emissionAtEnd - emissionAtStart;
+        }
+      
     }
 
     /**
@@ -216,12 +255,25 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
      */
     function _updateReward(address user) internal {
         uint256 rewardAdded = _calculateEmission();
+     
+        if (totalEmitted >= MAX_EMISSION) {
+            rewardAdded = 0;
+        }else{
+            uint256 remainingBudget = MAX_EMISSION - totalEmitted;
+            if(rewardAdded > remainingBudget){
+                rewardAdded = remainingBudget;
+            }
+        }
 
-        if (rewardAdded > 0 && totalWeight > 0) {
-            rewardPerToken += (rewardAdded * PRECISION) / totalWeight;
-        } else {
-            accumulatedIdleRewards += rewardAdded;
-            emit IdleRewardsAccumulated(rewardAdded);
+        totalEmitted += rewardAdded;
+
+        if(rewardAdded > 0){
+            if (totalWeight > 0) {
+                rewardPerToken += (rewardAdded * PRECISION) / totalWeight;
+            } else {
+                accumulatedIdleRewards += rewardAdded;
+                emit IdleRewardsAccumulated(rewardAdded);
+            }
         }
 
         lastUpdateTime = block.timestamp;
@@ -287,7 +339,7 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
         accumulatedIdleRewards = 0;
         revenueRebatePool.recordUnallocatedEmission(amount);
 
-        curToken.transfer(address(revenueRebatePool), amount);
+        curToken.safeTransfer(address(revenueRebatePool), amount);
         emit IdleRewardsFlushed(amount);
     }
 
@@ -323,7 +375,7 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
      * @param user User address
      * @param amount Amount of sCUR to withdraw
      */
-    function withdraw(address user, uint256 amount) public onlyCurStake nonReentrant whenNotPaused {
+    function withdraw(address user, uint256 amount) public onlyCurStake nonReentrant {
         if (amount == 0) revert ZeroAmount();
 
         _updateReward(user);
@@ -335,7 +387,7 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
 
         _updateWeight(user);
 
-        sCURToken.transfer(user, amount);
+        IERC20(address(sCURToken)).safeTransfer(user, amount);
 
         emit Withdraw(user, amount);
     }
@@ -345,9 +397,9 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
      * @dev Updates reward, flushes idle rewards, transfers pending CUR
      */
     function getReward() public nonReentrant whenNotPaused {
-        //更新权重
         _updateReward(msg.sender);
         _flushIdleRewards();
+        _updateWeight(msg.sender);
         //获得用户信息
         UserInfo storage userInfo = users[msg.sender];
         //计算用户获得的奖励
@@ -358,7 +410,7 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
         //重置待领取奖励
         userInfo.pendingRewards = 0;
         //转账cur
-        curToken.transfer(msg.sender, reward);
+        curToken.safeTransfer(msg.sender, reward);
         //发送事件
         emit GetReward(msg.sender, reward);
     }
@@ -387,7 +439,7 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
      * @dev Only callable by veCURLock contract
      * @param user User address
      */
-    function executeUnlock(address user) public onlyVeLock nonReentrant whenNotPaused {
+    function executeUnlock(address user) public onlyVeLock nonReentrant {
         //结算历史奖励
         _updateReward(user);
         _flushIdleRewards();
@@ -403,7 +455,7 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
      * @param user User address
      * @param penalty Penalty amount to burn
      */
-    function executeEarlyUnlock(address user, uint256 penalty) public onlyVeLock nonReentrant whenNotPaused {
+    function executeEarlyUnlock(address user, uint256 penalty) public onlyVeLock nonReentrant {
         //结算历史奖励
         _updateReward(user);
         _flushIdleRewards();
@@ -430,7 +482,7 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
         }
 
         if (pendingReward > 0) {
-            curToken.transfer(address(revenueRebatePool), pendingReward);
+            curToken.safeTransfer(address(revenueRebatePool), pendingReward);
             emit RewardsConfiscated(user, pendingReward);
         }
 
@@ -460,29 +512,11 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
         userInfo.pendingRewards = 0;
         userInfo.rewardPerTokenPaid = 0;
 
-        sCURToken.transfer(user, amount);
+        IERC20(address(sCURToken)).safeTransfer(user, amount);
 
         emit EmergencyWithdrawn(user, amount);
     }
 
-    /**
-     * @notice Clears user's pending rewards during emergency
-     * @dev Only callable by CURStaking when paused
-     * @param user User address to clear rewards for
-     */
-    function emergencyClearReward(address user) public onlyCurStake nonReentrant whenPaused {
-        UserInfo storage userInfo = users[user];
-
-        uint256 pending =
-            userInfo.pendingRewards + (userInfo.weight * (rewardPerToken - userInfo.rewardPerTokenPaid) / PRECISION);
-
-        userInfo.pendingRewards = 0;
-        userInfo.rewardPerTokenPaid = rewardPerToken;
-
-        if (pending > 0) {
-            emit RewardsCleared(user, pending);
-        }
-    }
 
     // ============================================
     // View Functions
@@ -524,6 +558,53 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
      */
     function getUserAmount(address user) public view returns (uint256) {
         return users[user].amount;
+    }
+
+    
+    /**
+     * @notice Updates the CURStaking contract address
+     * @dev Reverts if the address is zero, self-referential, or unchanged.
+     * @param _curStake The new CURStaking contract address
+     */
+    function setCurStake(address _curStake) external onlyOwner {
+        if (_curStake == address(0)) revert ZeroAddress();
+        if (_curStake == address(this)) revert InvalidAddress(); 
+        if (_curStake == address(curStake)) revert SameAddress(); 
+        
+        address oldStake = address(curStake);
+        curStake = ICURStaking(_curStake);
+
+        emit CurStakeUpdated(oldStake, _curStake);
+    }
+
+    /**
+     * @notice Updates the veCURLock contract address
+     * @dev Reverts if the address is zero, self-referential, or unchanged.
+     * @param _veLock The new veCURLock contract address
+     */
+    function setVeLock(address _veLock) external onlyOwner {
+        if (_veLock == address(0)) revert ZeroAddress();
+        if (_veLock == address(this)) revert InvalidAddress();
+        if (_veLock == address(veLock)) revert SameAddress();
+        
+        address oldVeLock = address(veLock);
+        veLock = IveCURLock(_veLock);
+        emit VeLockUpdated(oldVeLock, _veLock);
+    }
+
+    /**
+     * @notice Updates the RevenueRebatePool contract address
+     * @dev Reverts if the address is zero, self-referential, or unchanged.
+     * @param _revenueRebatePool The new RevenueRebatePool contract address
+     */
+    function setRevenueRebatePool(address _revenueRebatePool) external onlyOwner {
+        if (_revenueRebatePool == address(0)) revert ZeroAddress();
+        if (_revenueRebatePool == address(this)) revert InvalidAddress();
+        if (_revenueRebatePool == address(revenueRebatePool)) revert SameAddress();
+        
+        address oldPool = address(revenueRebatePool);
+        revenueRebatePool = IRevenueRebatePool(_revenueRebatePool);
+        emit RevenuePoolUpdated(oldPool, _revenueRebatePool);
     }
 
     // ============================================

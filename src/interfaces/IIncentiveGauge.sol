@@ -13,12 +13,12 @@ interface IIncentiveGauge {
     function executeUnlock(address user) external;
     function executeEarlyUnlock(address user, uint256 penalty) external;
     function gaugeEmergencyWithdraw(address user) external;
-    function emergencyClearReward(address user) external;
     function getPendingReward(address user) external view returns (uint256);
     function getRemainingRewards() external view returns (uint256);
     function getCurrentEmissionRate() external view returns (uint256);
     function getUserAmount(address user) external view returns (uint256);
     function flushIdleRewards() external;
+    function paused() external view returns (bool);
 
     event Deposit(address indexed user, uint256 amount);
     event Withdraw(address indexed user);
@@ -27,6 +27,5 @@ interface IIncentiveGauge {
     event UnlockExecuted(address indexed user);
     event EarlyUnlockExecuted(address indexed user, uint256 penalty, uint256 oldWeight, uint256 newWeight);
     event EmergencyWithdrawn(address indexed user, uint256 amount);
-    event RewardsCleared(address indexed user, uint256 amount);
     event IdleRewardsFlushed(uint256 amount);
 }

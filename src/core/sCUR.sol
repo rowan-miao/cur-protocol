@@ -61,10 +61,10 @@ contract sCUR is ERC20, Pausable, Ownable, ReentrancyGuard {
     event MinterRemoved(address indexed minter);
 
     /// @notice Emitted when IncentiveGauge address is updated
-    event IncentiveGaugeUpdated(address indexed oldGauge, address indexed newGauge);
+    event IncentiveGaugeUpdated(address indexed oldAddress, address indexed newAddress);
 
     /// @notice Emitted when CURStaking address is updated
-    event CurStakingUpdated(address indexed newStaking);
+    event CurStakingUpdated(address indexed CURStaking);
 
     /// @notice Emitted when sCUR is burned from the gauge as an early-unlock penalty
     event PenaltyBurned(address indexed gauge, uint256 sCURBurned, uint256 curAmount);
@@ -102,6 +102,13 @@ contract sCUR is ERC20, Pausable, Ownable, ReentrancyGuard {
 
     /// @notice Thrown when trying to set CURStaking after it has been set
     error StakingAlreadySet();
+    
+    /// @notice Thrown when an invalid address is provided
+    error InvalidAddress(); 
+
+    /// @notice Thrown when the new address is identical to the current one
+    error SameAddress();
+
 
     // ============================================
     // Modifiers
@@ -197,11 +204,6 @@ contract sCUR is ERC20, Pausable, Ownable, ReentrancyGuard {
         nonReentrant
         returns (uint256 sCURAmount)
     {
-        ///判断to是否是空地址
-        ///判断 CURAmount 是否为零
-        ///计算当前汇率 变更sCURAmount的数值
-        ///铸造
-        ///发送事件
         if (to == address(0)) revert ZeroAddress();
         if (CURAmount == 0) revert ZeroAmount();
 
@@ -223,7 +225,7 @@ contract sCUR is ERC20, Pausable, Ownable, ReentrancyGuard {
      * @param sCURAmount Amount of sCUR to redeem
      * @return CURAmount Amount of CUR returned
      */
-    function redeem(address from, uint256 sCURAmount) public onlyMinter whenNotPaused nonReentrant returns (uint256) {
+    function redeem(address from, uint256 sCURAmount) public onlyMinter nonReentrant returns (uint256) {
         return _redeem(from, sCURAmount);
     }
 
@@ -235,12 +237,6 @@ contract sCUR is ERC20, Pausable, Ownable, ReentrancyGuard {
      * @return CURAmount Amount of CUR returned
      */
     function _redeem(address from, uint256 sCURAmount) internal returns (uint256 CURAmount) {
-        ///判断to是否为空地址
-        ///判断sCURAmount是否为零
-        ///判断用户是否有足够的 sCUR 余额
-        ///计算当前汇率
-        ///销毁
-        ///发送赎回事件
         if (from == address(0)) revert ZeroAddress();
         if (sCURAmount == 0) revert ZeroAmount();
 
@@ -333,15 +329,25 @@ contract sCUR is ERC20, Pausable, Ownable, ReentrancyGuard {
      * @dev Only callable by contract owner
      * @param _incentiveGauge New IncentiveGauge contract address
      */
-    function setIncentiveGauge(address _incentiveGauge) public onlyOwner {
+    function setIncentiveGauge(address _incentiveGauge) external onlyOwner {
         if (_incentiveGauge == address(0)) revert ZeroAddress();
+        if(_incentiveGauge == address(this)) revert InvalidAddress();  
+        if(_incentiveGauge == address(incentiveGauge)) revert SameAddress();
+
         address oldGauge = address(incentiveGauge);
         incentiveGauge = IIncentiveGauge(_incentiveGauge);
+
         emit IncentiveGaugeUpdated(oldGauge, _incentiveGauge);
     }
 
-    function setCurStaking(address _curStaking) public onlyOwner {
+    /**
+     * @notice Sets the CURStaking contract address (one-time setup)
+     * @dev Only callable by contract owner
+     * @param _curStaking Address of the CURStaking contract
+     */
+    function setCurStaking(address _curStaking) external onlyOwner {
         if (_curStaking == address(0)) revert ZeroAddress();
+        if (_curStaking == address(this)) revert InvalidAddress();
         if (CUR_STAKING != address(0)) revert StakingAlreadySet();
 
         CUR_STAKING = _curStaking;
