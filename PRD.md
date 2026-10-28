@@ -393,15 +393,15 @@ Airdrop 合约负责向白名单用户分发固定数量的 CUR 空投奖励，�
 
 **白名单管理（Owner）**
 
-- 单个添加：addToWhitelist(user)
+- 单个添加：`addToWhitelist(user)`
 
-- 批量添加：addWhitelist(address[] users)
+- 批量添加：`addWhitelist(address[] users)`
 
-- 移除：removeFromWhitelist(user)
+- 移除：`removeFromWhitelist(user)`
 
 **存入 CUR（Owner）**
 
-- deposit(amount)：Owner 将 CUR 转入合约，用于分发
+- `deposit(amount)`：Owner 将 CUR 转入合约，用于分发
 
 #### 5.7.4 用户价值
 
@@ -457,23 +457,25 @@ Scenario: 质押数量低于最低要求
   When 用户 alice 调用 stake(minimumStake - 1)
   Then 交易回滚，错误 BelowMinimumStake
 
-Scenario: 用户余额不足
-  Given 用户 alice 有 500 CUR 余额
-  When 用户 alice 调用 stake(1000)
-  Then 交易回滚，错误 ERC20InsufficientBalance
-
-Scenario: 用户未授权合约
-  Given 用户 alice 有 1000 CUR 余额
-  And  用户 alice 未授权 CURStaking 使用 CUR
-  When 用户 alice 调用 stake(1000)
-  Then 交易回滚，错误 ERC20InsufficientAllowance
+Scenario: 极高汇率下小额质押导致铸造 sCUR 为 0
+  Given 协议中已有用户质押，确保 sCUR 总供应量大于 0
+  And  协议注入了巨额收入，使得当前汇率极高
+  And  当前汇率高到使得 minimumStake 数量的 CUR 只能换算出 0 wei 的 sCUR（即 minimumStake * 1e18 < 当前汇率）
+  And  用户 alice 拥有 minimumStake 数量的 CUR，并已授权
+  When 用户 alice 调用 stake(minimumStake)
+  Then 计算得出的 sCUR 数量为 0
+  And  交易回滚，错误 ZeroSCURMinted
 
 Scenario: 汇率变化后质押
-  Given 用户 alice 有 2000 CUR 余额
-  And  当前汇率为 1.2e18（1 sCUR = 1.2 CUR）
-  When 用户 alice 调用 stake(1200)
-  Then 用户 alice 收到 1000 sCUR
-  And  触发 Staked(alice, 1200, 1000) 事件
+  Given 用户 alice 已质押 1000 CUR（初始汇率 1:1）
+  And  协议成功注入 500 CUR 收入，使总 underlying 变为 1500
+  And  当前汇率为 1.5e18（1 sCUR = 1.5 CUR）
+  And  用户 bob 拥有 1500 CUR 余额并已授权 CURStaking
+  When 用户 bob 调用 stake(1500)
+  Then 用户 bob 收到 1000 sCUR
+  And  CURStaking 合约 CUR 余额增加 1500
+  And  触发 Staked(bob, 1500, 1000) 事件
+  And  触发 Mint(bob, 1500, 1000) 事件
 ```
 
 ### 6.2 赎回功能（Unstake）
