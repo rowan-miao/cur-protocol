@@ -71,7 +71,7 @@ contract MockNFTChecker {
     function setUserBinding(address user, uint8 tier) external {
         address nft = address(1);
 
-        userBindings[user] = UserBinding({nftContract: nft, tokenId: 1, bindTime: block.timestamp, isBound: true});
+        userBindings[user] = UserBinding({ nftContract: nft, tokenId: 1, bindTime: block.timestamp, isBound: true });
         contractTiers[nft] = tier;
     }
 
@@ -497,7 +497,7 @@ contract veCURLockTest is Test {
         vm.prank(alice);
         veLock.lock(DURATION_30);
 
-        uint256 expectedPenalty = (amount * PENALTY_RATE) / 10000;
+        uint256 expectedPenalty = (amount * PENALTY_RATE) / 10_000;
         uint256 penalty = veLock.calculatePenalty(alice);
 
         assertEq(penalty, expectedPenalty);
@@ -512,7 +512,7 @@ contract veCURLockTest is Test {
 
         vm.warp(block.timestamp + (DURATION_30 / 2));
 
-        uint256 expectedPenalty = (amount * PENALTY_RATE * (DURATION_30 / 2)) / DURATION_30 / 10000;
+        uint256 expectedPenalty = (amount * PENALTY_RATE * (DURATION_30 / 2)) / DURATION_30 / 10_000;
         uint256 penalty = veLock.calculatePenalty(alice);
 
         assertEq(penalty, expectedPenalty);
@@ -544,7 +544,7 @@ contract veCURLockTest is Test {
 
         vm.warp(block.timestamp + (DURATION_30 / 2));
 
-        uint256 expectedPenalty = (amount * PENALTY_RATE * (DURATION_30 / 2)) / DURATION_30 / 10000;
+        uint256 expectedPenalty = (amount * PENALTY_RATE * (DURATION_30 / 2)) / DURATION_30 / 10_000;
 
         vm.prank(curStaking);
         uint256 penalty = veLock.emergencyBreakLock(alice);
@@ -875,7 +875,7 @@ contract veCURLockTest is Test {
 
         uint256 penalty = veLock.calculatePenalty(alice);
 
-        uint256 expectedPenalty = (gaugeBalance * 5000) / 10000;
+        uint256 expectedPenalty = (gaugeBalance * 5000) / 10_000;
         assertApproxEqAbs(penalty, expectedPenalty, 1);
     }
 
@@ -889,7 +889,7 @@ contract veCURLockTest is Test {
         vm.warp(block.timestamp + 15 days);
 
         uint256 penalty = veLock.calculatePenalty(alice);
-        uint256 expectedPenalty = (gaugeBalance * 5000 * 15 days) / (10000 * DURATION_30);
+        uint256 expectedPenalty = (gaugeBalance * 5000 * 15 days) / (10_000 * DURATION_30);
         assertApproxEqAbs(penalty, expectedPenalty, 1);
     }
 
@@ -1128,7 +1128,7 @@ contract veCURLockTest is Test {
     }
 
     function test_Fuzz_LockAndUnlock(uint256 gaugeAmount) public {
-        gaugeAmount = bound(gaugeAmount, 1, 10000000 * 1e18);
+        gaugeAmount = bound(gaugeAmount, 1, 10_000_000 * 1e18);
 
         incentiveGauge.setUserAmount(alice, gaugeAmount);
 

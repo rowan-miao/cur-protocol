@@ -12,7 +12,7 @@ import "../src/modules/IncentiveGauge.sol";
 import "../src/modules/RevenueRebatePool.sol";
 
 contract MockERC721 is ERC721 {
-    constructor() ERC721("Mock", "M") {}
+    constructor() ERC721("Mock", "M") { }
 
     function mint(address to, uint256 tokenId) external {
         _mint(to, tokenId);

@@ -312,7 +312,7 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
         uint256 remaining = lockInfo.endTime - block.timestamp;
         uint256 totalTime = lockInfo.endTime - lockInfo.startTime;
 
-        penalty = (lockInfo.amount * PENALTY_RATE * remaining) / totalTime / 10000;
+        penalty = (lockInfo.amount * PENALTY_RATE * remaining) / totalTime / 10_000;
 
         return penalty;
     }

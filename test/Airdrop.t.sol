@@ -15,7 +15,7 @@ contract AirdropTest is Test {
     address public charlie = makeAddr("charlie");
 
     uint256 public constant AIRDROP_AMOUNT = 1000 * 1e18;
-    uint256 public constant TOTAL_AIRDROP = 10000000 * 1e18;
+    uint256 public constant TOTAL_AIRDROP = 10_000_000 * 1e18;
 
     event Claimed(address indexed user, uint256 amount);
     event AddWhitelist(address[] indexed users);

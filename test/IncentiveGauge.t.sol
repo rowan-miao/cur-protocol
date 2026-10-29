@@ -7,7 +7,7 @@ import "../src/core/sCUR.sol";
 import "../src/modules/IncentiveGauge.sol";
 
 contract MockCURStaking {
-    function executePenalty(address user, uint256 penalty) external {}
+    function executePenalty(address user, uint256 penalty) external { }
 }
 
 contract MockveCURLock {
@@ -48,7 +48,7 @@ contract MockveCURLock {
 }
 
 contract MockRevenueRebatePool {
-    function recordUnallocatedEmission(uint256 amount) external {}
+    function recordUnallocatedEmission(uint256 amount) external { }
 }
 
 contract IncentiveGaugeTest is Test {

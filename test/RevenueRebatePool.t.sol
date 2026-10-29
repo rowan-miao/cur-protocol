@@ -18,7 +18,7 @@ contract MockIncentiveGauge {
         sCURToken = IsCUR(_sCURToken);
     }
 
-    function deposit(address user, uint256 amount) external {}
+    function deposit(address user, uint256 amount) external { }
 
     function withdraw(address user, uint256 amount) external {
         sCURToken.transfer(user, amount);
@@ -28,9 +28,9 @@ contract MockIncentiveGauge {
         return 0;
     }
 
-    function gaugeEmergencyWithdraw(address user) external {}
+    function gaugeEmergencyWithdraw(address user) external { }
 
-    function emergencyClearReward(address user) external {}
+    function emergencyClearReward(address user) external { }
 }
 
 contract MockVeCURLock {
@@ -623,7 +623,7 @@ contract RevenueRebatePoolTest is Test {
     // ============================================
 
     function test_Fuzz_DepositRevenue(uint256 amount) public {
-        amount = bound(amount, 1, 10000 * 1e18);
+        amount = bound(amount, 1, 10_000 * 1e18);
         uint256 beforeTotalRevenue = revenuePool.totalRevenue();
 
         vm.prank(alice);

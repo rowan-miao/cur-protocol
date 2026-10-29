@@ -203,7 +203,7 @@ contract NFTChecker is Pausable, Ownable {
         //更新UserBinding
         nftBound[nftContract][tokenId] = true;
         userBindings[msg.sender] =
-            UserBinding({nftContract: nftContract, tokenId: tokenId, bindTime: block.timestamp, isBound: true});
+            UserBinding({ nftContract: nftContract, tokenId: tokenId, bindTime: block.timestamp, isBound: true });
 
         //发送事件
         emit NFTBound(msg.sender, nftContract, tokenId, contractTiers[nftContract]);

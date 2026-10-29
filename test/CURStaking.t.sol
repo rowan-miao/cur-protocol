@@ -93,7 +93,7 @@ contract MockVeCURLock {
     }
 }
 
-contract MockRevenueRebatePool {}
+contract MockRevenueRebatePool { }
 
 contract CURStakingTest is Test {
     CURStaking public staking;

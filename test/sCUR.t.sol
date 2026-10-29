@@ -19,9 +19,9 @@ contract MockIncentiveGauge {
     }
 }
 
-contract MockveCURLock {}
+contract MockveCURLock { }
 
-contract MockRevenueRebatePool {}
+contract MockRevenueRebatePool { }
 
 contract sCURTest is Test {
     sCUR public sCur;
@@ -698,7 +698,7 @@ contract sCURTest is Test {
     }
 
     function test_Fuzz_Redeem(uint256 curAmount, uint256 redeemAmount) public {
-        curAmount = bound(curAmount, 1e18, 1_000_00 * 1e18);
+        curAmount = bound(curAmount, 1e18, 100_000 * 1e18);
         redeemAmount = bound(redeemAmount, 1e18, curAmount);
 
         vm.prank(minter);

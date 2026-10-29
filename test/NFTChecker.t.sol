@@ -507,7 +507,7 @@ contract NFTCheckerTest is Test {
 
     function testFuzz_BindNFT_ValidTokenId(uint256 tokenId) public {
         vm.assume(tokenId > 0);
-        vm.assume(tokenId < 10000);
+        vm.assume(tokenId < 10_000);
 
         vm.prank(owner);
         midNFT.mint(alice, tokenId);
