@@ -28,7 +28,7 @@ contract InvariantsTest is Test {
     address public owner;
 
     function setUp() public {
-        owner  = makeAddr("owner");
+        owner = makeAddr("owner");
         vm.startPrank(owner);
 
         curToken = new CURToken();
@@ -38,8 +38,10 @@ contract InvariantsTest is Test {
         veLock = new veCURLock(address(sCURToken), address(nftChecker), address(0));
         revenue = new RevenueRebatePool(address(curToken), address(sCURToken), address(staking));
         sCURToken.addMinter(address(revenue));
-        gauge = new IncentiveGauge( address(curToken), address(sCURToken), address(staking), address(veLock), address(revenue));
-        
+        gauge = new IncentiveGauge(
+            address(curToken), address(sCURToken), address(staking), address(veLock), address(revenue)
+        );
+
         mockMidNFT = new MockERC721();
         mockHighNFT = new MockERC721();
 
@@ -60,28 +62,18 @@ contract InvariantsTest is Test {
 
         revenue.setGauge(address(gauge));
         curToken.transfer(address(gauge), 40_000_000 * 1e18);
-    
+
         vm.stopPrank();
 
         handler = new Handler(
-            curToken,
-            sCURToken,
-            staking, 
-            veLock,
-            gauge, 
-            revenue, 
-            nftChecker,
-            mockMidNFT,
-            mockHighNFT,
-            owner
+            curToken, sCURToken, staking, veLock, gauge, revenue, nftChecker, mockMidNFT, mockHighNFT, owner
         );
-       
+
         vm.prank(owner);
         curToken.transfer(address(handler), 10_000_000 * 1e18);
 
-
         targetContract(address(handler));
-    } 
+    }
 
     function invariant_UnderlyingMatchesStakingBalance() public view {
         assertEq(sCURToken.totalUnderlying(), curToken.balanceOf(address(staking)));
@@ -91,17 +83,16 @@ contract InvariantsTest is Test {
         assertLe(gauge.totalEmitted(), 40_000_000 * 1e18);
     }
 
-    function invariant_TotalWeightEqualsSum() public view{
+    function invariant_TotalWeightEqualsSum() public view {
         uint256 sum = 0;
         uint256 length = handler.actorsLength();
-        
+
         for (uint256 i = 0; i < length; i++) {
             address actor = handler.getActor(i);
             (, uint256 weight,,) = gauge.users(actor);
             sum += weight;
         }
-        
+
         assertEq(gauge.totalWeight(), sum);
     }
-
 }

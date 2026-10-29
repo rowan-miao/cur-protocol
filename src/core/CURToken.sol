@@ -19,7 +19,6 @@ contract CURToken is ERC20, Pausable, Ownable {
     /// @notice Total supply of CUR tokens
     uint256 public constant TOTAL_SUPPLY = 100_000_000 * 1e18;
 
-
     // ============================================
     // Constructor
     // ============================================
@@ -58,6 +57,4 @@ contract CURToken is ERC20, Pausable, Ownable {
     function unpause() public onlyOwner {
         _unpause();
     }
-
-   
 }

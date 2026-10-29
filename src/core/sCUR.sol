@@ -102,13 +102,12 @@ contract sCUR is ERC20, Pausable, Ownable, ReentrancyGuard {
 
     /// @notice Thrown when trying to set CURStaking after it has been set
     error StakingAlreadySet();
-    
+
     /// @notice Thrown when an invalid address is provided
-    error InvalidAddress(); 
+    error InvalidAddress();
 
     /// @notice Thrown when the new address is identical to the current one
     error SameAddress();
-
 
     // ============================================
     // Modifiers
@@ -331,8 +330,8 @@ contract sCUR is ERC20, Pausable, Ownable, ReentrancyGuard {
      */
     function setIncentiveGauge(address _incentiveGauge) external onlyOwner {
         if (_incentiveGauge == address(0)) revert ZeroAddress();
-        if(_incentiveGauge == address(this)) revert InvalidAddress();  
-        if(_incentiveGauge == address(incentiveGauge)) revert SameAddress();
+        if (_incentiveGauge == address(this)) revert InvalidAddress();
+        if (_incentiveGauge == address(incentiveGauge)) revert SameAddress();
 
         address oldGauge = address(incentiveGauge);
         incentiveGauge = IIncentiveGauge(_incentiveGauge);

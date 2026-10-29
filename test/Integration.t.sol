@@ -12,8 +12,9 @@ import "../src/modules/IncentiveGauge.sol";
 import "../src/modules/RevenueRebatePool.sol";
 
 contract MockERC721 is ERC721 {
-    constructor() ERC721("Mock", "M"){}
-    function mint(address to, uint256 tokenId) external{
+    constructor() ERC721("Mock", "M") {}
+
+    function mint(address to, uint256 tokenId) external {
         _mint(to, tokenId);
     }
 }
@@ -33,24 +34,25 @@ contract IntegrationTest is Test {
     address bob = makeAddr("bob");
     address owner = makeAddr("owner");
 
-
     function setUp() public {
         vm.startPrank(owner);
         curToken = new CURToken();
-        
+
         sCURToken = new sCUR(address(curToken), address(0));
-        
+
         nftChecker = new NFTChecker(address(0));
-       
+
         staking = new CURStaking(address(curToken), address(sCURToken), address(0), address(0), address(0));
-       
+
         veLock = new veCURLock(address(sCURToken), address(nftChecker), address(0));
-        
+
         revenue = new RevenueRebatePool(address(curToken), address(sCURToken), address(staking));
-        
+
         sCURToken.addMinter(address(revenue));
-     
-        gauge = new IncentiveGauge(address(curToken), address(sCURToken), address(staking), address(veLock), address(revenue));
+
+        gauge = new IncentiveGauge(
+            address(curToken), address(sCURToken), address(staking), address(veLock), address(revenue)
+        );
 
         sCURToken.setIncentiveGauge(address(gauge));
         sCURToken.setCurStaking(address(staking));
@@ -66,9 +68,9 @@ contract IntegrationTest is Test {
 
         revenue.setGauge(address(gauge));
 
-        mockMidNFT= new MockERC721();
+        mockMidNFT = new MockERC721();
         nftChecker.addWhiteListedContract(address(mockMidNFT), 1);
-        mockHighNFT = new MockERC721(); 
+        mockHighNFT = new MockERC721();
         nftChecker.addWhiteListedContract(address(mockHighNFT), 2);
 
         curToken.transfer(address(gauge), 40_000_000 * 1e18);
@@ -90,13 +92,12 @@ contract IntegrationTest is Test {
 
         vm.prank(owner);
         curToken.approve(address(revenue), type(uint256).max);
-
     }
 
     function test_Integration_FullFlow_Rewards() public {
         vm.prank(alice);
         staking.stake(1000 * 1e18);
-    
+
         vm.prank(alice);
         staking.enterGauge(1000 * 1e18);
 
@@ -107,7 +108,7 @@ contract IntegrationTest is Test {
         vm.warp(block.timestamp + 15 days);
 
         uint256 curBalBefore1 = curToken.balanceOf(alice);
-        
+
         vm.prank(alice);
         gauge.getReward();
 
@@ -116,8 +117,8 @@ contract IntegrationTest is Test {
 
         (, uint256 weightDuringLock,,) = gauge.users(alice);
         assertEq(weightDuringLock, 1150 * 1e18);
-        
-        vm.warp(block.timestamp + 20 days); 
+
+        vm.warp(block.timestamp + 20 days);
 
         uint256 curBalBefore2 = curToken.balanceOf(alice);
         vm.prank(alice);
@@ -188,7 +189,7 @@ contract IntegrationTest is Test {
         gauge.getReward();
         assertGt(curToken.balanceOf(alice), balBefore);
     }
-    
+
     function test_Integration_FullLifecycle_NormalExit() public {
         uint256 initialCUR = curToken.balanceOf(alice);
 
@@ -204,7 +205,7 @@ contract IntegrationTest is Test {
 
         vm.prank(alice);
         gauge.getReward();
-    
+
         uint256 rewardEarned = curToken.balanceOf(alice) - balanceBeforeReward;
         assertGt(rewardEarned, 0);
 
@@ -223,7 +224,7 @@ contract IntegrationTest is Test {
 
         assertEq(curToken.balanceOf(alice), initialCUR + rewardEarned);
         assertEq(sCURToken.balanceOf(alice), 0);
-    } 
+    }
 
     function test_Integration_EmergencyWithdraw() public {
         vm.startPrank(alice);
@@ -299,7 +300,7 @@ contract IntegrationTest is Test {
         assertEq(sCURToken.getExchangeRate(), 1.5e18);
 
         uint256 aliceBalBefore = curToken.balanceOf(alice);
-    
+
         vm.prank(alice);
         staking.unstake(1000 * 1e18);
         assertEq(curToken.balanceOf(alice) - aliceBalBefore, 1500 * 1e18);
@@ -329,7 +330,7 @@ contract IntegrationTest is Test {
         uint256 expectedPenalty = 375 * 1e18;
 
         assertEq(curToken.balanceOf(address(revenue)) - revenueBefore, expectedPenalty);
-        
+
         uint256 gaugeAmount = gauge.getUserAmount(alice);
 
         vm.prank(alice);
@@ -340,9 +341,8 @@ contract IntegrationTest is Test {
 
         vm.prank(alice);
         staking.unstake(750 * 1e18);
-        
+
         uint256 expectedCUR = actualSCURInWallet * 1.5e18 / 1e18;
         assertEq(curToken.balanceOf(alice) - aliceCURBefore, expectedCUR);
     }
-
 }

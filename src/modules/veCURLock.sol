@@ -47,7 +47,7 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
     uint256 public constant BONUS_180 = 1.65e18;
     uint256 public constant BONUS_365 = 2.0e18;
     uint256 public constant BONUS_730 = 2.5e18;
- 
+
     uint256 public constant PENALTY_RATE = 5000;
 
     uint256 public totalLocked;
@@ -90,7 +90,7 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
     event CurStakingUpdated(address indexed oldAddress, address indexed newAddress);
     /// @notice Emitted when a user's lock is forcibly broken during emergency withdrawal
     event EmergencyUnlocked(address indexed user, uint256 amount);
-     
+
     // ============================================
     // Errors
     // ============================================
@@ -120,8 +120,8 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
     /// @notice Thrown when the caller is not authorized to execute the function
     error Unauthorized();
     /// @notice Thrown when an address parameter is invalid
-    error InvalidAddress(); 
-    /// @notice Thrown when the new address is identical to the existing one 
+    error InvalidAddress();
+    /// @notice Thrown when the new address is identical to the existing one
     error SameAddress();
 
     // ============================================
@@ -131,7 +131,7 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
     /**
      * @notice Restricts function access to the CURStaking contract only
      * @dev Reverts with Unauthorized if the caller is not the configured curStaking address
-     */ 
+     */
     modifier onlyCurStaking() {
         if (msg.sender != address(curStaking)) revert Unauthorized();
         _;
@@ -289,7 +289,7 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
         //更新totalLocked
         totalLocked -= lockInfo.amount;
         // 解除 NFT 绑定
-        if(nftChecker.isUserBound(msg.sender)){
+        if (nftChecker.isUserBound(msg.sender)) {
             nftChecker.unbindNFTFor(msg.sender);
         }
 
@@ -325,9 +325,9 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
      * @param user The address of the user whose lock should be broken
      * @return penalty The sCUR penalty amount to be deducted (0 if not locked or already expired)
      */
-    function emergencyBreakLock(address user) public onlyCurStaking returns (uint256 penalty){
+    function emergencyBreakLock(address user) public onlyCurStaking returns (uint256 penalty) {
         LockInfo storage lockInfo = locks[user];
-        if(!lockInfo.isLocked) return 0;
+        if (!lockInfo.isLocked) return 0;
 
         uint256 amount = lockInfo.amount;
 
@@ -389,7 +389,7 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
      */
     function setIncentiveGauge(address _incentiveGauge) external onlyOwner {
         if (_incentiveGauge == address(0)) revert ZeroAddress();
-        if (_incentiveGauge == address(this)) revert InvalidAddress(); 
+        if (_incentiveGauge == address(this)) revert InvalidAddress();
         if (_incentiveGauge == address(incentiveGauge)) revert SameAddress();
 
         address oldGauge = address(incentiveGauge);
@@ -397,14 +397,14 @@ contract veCURLock is Pausable, Ownable, ReentrancyGuard {
 
         emit IncentiveGaugeUpdated(oldGauge, _incentiveGauge);
     }
-    
+
     /**
      * @notice Updates CURStaking contract address
      * @param _curStaking New CURStaking address
      */
     function setCurStaking(address _curStaking) external onlyOwner {
         if (_curStaking == address(0)) revert ZeroAddress();
-        if (_curStaking == address(this)) revert InvalidAddress(); 
+        if (_curStaking == address(this)) revert InvalidAddress();
         if (_curStaking == address(curStaking)) revert SameAddress();
 
         address oldStaking = address(curStaking);

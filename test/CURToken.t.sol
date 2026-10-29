@@ -179,7 +179,6 @@ contract CURTokenTest is Test {
         token.transferFrom(alice, address(0), amount);
     }
 
- 
     // ============================================
     // Pause Tests
     // ============================================
@@ -207,9 +206,7 @@ contract CURTokenTest is Test {
         vm.prank(owner);
         token.transfer(alice, 1000 * 1e18);
         assertEq(token.balanceOf(alice), 1000 * 1e18);
-
     }
-
 
     function test_Pause_Event() public {
         vm.expectEmit(true, false, false, true);

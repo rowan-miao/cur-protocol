@@ -43,7 +43,7 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
 
     uint256 public constant MAX_EMISSION = 40_000_000 * 1e18;
     uint256 public constant IDLE_REWARD_THRESHOLD = 1000 * 1e18;
-    
+
     uint256 public startTime;
     uint256 public rewardPerToken;
     uint256 public lastUpdateTime;
@@ -135,11 +135,10 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
     error NoAssets();
 
     /// @notice Thrown when an invalid address is provided
-    error InvalidAddress(); 
+    error InvalidAddress();
 
     /// @notice Thrown when the new address is identical to the current one
     error SameAddress();
-
 
     // ============================================
     // modifiers
@@ -218,7 +217,7 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
      */
     function _calculateEmission() internal view returns (uint256 rewardAdded) {
         uint256 timeNow = block.timestamp;
-        
+
         if (timeNow <= lastUpdateTime || timeNow <= startTime) {
             return 0;
         }
@@ -227,10 +226,10 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
         uint256 elapsedStart = from - startTime;
         uint256 elapsedEnd = timeNow - startTime;
 
-        uint256[5] memory boundaries = [uint256(0), YEAR, YEAR *2, YEAR * 3, YEAR * 4];
+        uint256[5] memory boundaries = [uint256(0), YEAR, YEAR * 2, YEAR * 3, YEAR * 4];
         uint256[4] memory allocations = [ALLOCATION_Y1, ALLOCATION_Y2, ALLOCATION_Y3, ALLOCATION_Y4];
 
-        for(uint256 i = 0; i < 4; i++){
+        for (uint256 i = 0; i < 4; i++) {
             uint256 yearStart = boundaries[i];
             uint256 yearEnd = boundaries[i + 1];
 
@@ -245,7 +244,6 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
             uint256 emissionAtEnd = allocations[i] * (overlapEnd - yearStart) / YEAR;
             rewardAdded += emissionAtEnd - emissionAtStart;
         }
-      
     }
 
     /**
@@ -255,19 +253,19 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
      */
     function _updateReward(address user) internal {
         uint256 rewardAdded = _calculateEmission();
-     
+
         if (totalEmitted >= MAX_EMISSION) {
             rewardAdded = 0;
-        }else{
+        } else {
             uint256 remainingBudget = MAX_EMISSION - totalEmitted;
-            if(rewardAdded > remainingBudget){
+            if (rewardAdded > remainingBudget) {
                 rewardAdded = remainingBudget;
             }
         }
 
         totalEmitted += rewardAdded;
 
-        if(rewardAdded > 0){
+        if (rewardAdded > 0) {
             if (totalWeight > 0) {
                 rewardPerToken += (rewardAdded * PRECISION) / totalWeight;
             } else {
@@ -517,7 +515,6 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
         emit EmergencyWithdrawn(user, amount);
     }
 
-
     // ============================================
     // View Functions
     // ============================================
@@ -560,7 +557,6 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
         return users[user].amount;
     }
 
-    
     /**
      * @notice Updates the CURStaking contract address
      * @dev Reverts if the address is zero, self-referential, or unchanged.
@@ -568,9 +564,9 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
      */
     function setCurStake(address _curStake) external onlyOwner {
         if (_curStake == address(0)) revert ZeroAddress();
-        if (_curStake == address(this)) revert InvalidAddress(); 
-        if (_curStake == address(curStake)) revert SameAddress(); 
-        
+        if (_curStake == address(this)) revert InvalidAddress();
+        if (_curStake == address(curStake)) revert SameAddress();
+
         address oldStake = address(curStake);
         curStake = ICURStaking(_curStake);
 
@@ -586,7 +582,7 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
         if (_veLock == address(0)) revert ZeroAddress();
         if (_veLock == address(this)) revert InvalidAddress();
         if (_veLock == address(veLock)) revert SameAddress();
-        
+
         address oldVeLock = address(veLock);
         veLock = IveCURLock(_veLock);
         emit VeLockUpdated(oldVeLock, _veLock);
@@ -601,7 +597,7 @@ contract IncentiveGauge is Pausable, Ownable, ReentrancyGuard {
         if (_revenueRebatePool == address(0)) revert ZeroAddress();
         if (_revenueRebatePool == address(this)) revert InvalidAddress();
         if (_revenueRebatePool == address(revenueRebatePool)) revert SameAddress();
-        
+
         address oldPool = address(revenueRebatePool);
         revenueRebatePool = IRevenueRebatePool(_revenueRebatePool);
         emit RevenuePoolUpdated(oldPool, _revenueRebatePool);

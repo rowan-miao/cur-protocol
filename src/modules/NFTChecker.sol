@@ -52,7 +52,6 @@ contract NFTChecker is Pausable, Ownable {
     // State Variables
     // ============================================
 
-   
     mapping(address => UserBinding) public userBindings;
     mapping(address => mapping(uint256 => bool)) public nftBound;
     mapping(address => uint8) public contractTiers;
@@ -97,11 +96,10 @@ contract NFTChecker is Pausable, Ownable {
     error PositionLocked();
     /// @notice Thrown when the caller is not authorized
     error Unauthorized();
-   /// @notice Thrown when an address parameter is invalid
+    /// @notice Thrown when an address parameter is invalid
     error InvalidAddress();
-    /// @notice Thrown when attempting to set an address to its current value 
+    /// @notice Thrown when attempting to set an address to its current value
     error SameAddress();
-
 
     // ============================================
     // modifier
@@ -169,16 +167,15 @@ contract NFTChecker is Pausable, Ownable {
         if (index != lastIndex) {
             address lastContract = whitelistedContractsList[lastIndex];
             whitelistedContractsList[index] = lastContract;
- 
+
             _whitelistIndex[lastContract] = index + 1;
         }
-
 
         whitelistedContractsList.pop();
 
         delete _whitelistIndex[nftContract];
         delete contractTiers[nftContract];
-   
+
         emit ContractRemoved(nftContract);
     }
 
@@ -202,12 +199,11 @@ contract NFTChecker is Pausable, Ownable {
         ///检查是否持有NFT
         address owner = IERC721(nftContract).ownerOf(tokenId);
         if (msg.sender != owner) revert NotOwner();
-        
+
         //更新UserBinding
         nftBound[nftContract][tokenId] = true;
-        userBindings[msg.sender] = UserBinding({
-            nftContract: nftContract, tokenId: tokenId, bindTime: block.timestamp, isBound: true
-        });
+        userBindings[msg.sender] =
+            UserBinding({nftContract: nftContract, tokenId: tokenId, bindTime: block.timestamp, isBound: true});
 
         //发送事件
         emit NFTBound(msg.sender, nftContract, tokenId, contractTiers[nftContract]);
@@ -268,7 +264,6 @@ contract NFTChecker is Pausable, Ownable {
         return owner == user;
     }
 
-
     /**
      * @notice Checks if an NFT contract is whitelisted
      * @param nftContract NFT contract address
@@ -293,9 +288,8 @@ contract NFTChecker is Pausable, Ownable {
      */
     function getUserTier(address user) public view returns (uint8) {
         UserBinding memory binding = userBindings[user];
-        if(!binding.isBound) return TIER_NONE;
+        if (!binding.isBound) return TIER_NONE;
         return contractTiers[binding.nftContract];
-        
     }
 
     /**
@@ -314,8 +308,8 @@ contract NFTChecker is Pausable, Ownable {
      */
     function setVeLock(address _veLock) external onlyOwner {
         if (_veLock == address(0)) revert ZeroAddress();
-        if(_veLock == address(this)) revert InvalidAddress();
-        if(_veLock == address(veLock)) revert SameAddress();
+        if (_veLock == address(this)) revert InvalidAddress();
+        if (_veLock == address(veLock)) revert SameAddress();
 
         address oldVeLock = address(veLock);
         veLock = IveCURLock(_veLock);

@@ -387,7 +387,7 @@ contract RevenueRebatePoolTest is Test {
 
         vm.prank(owner);
         vm.expectEmit(false, false, false, true);
-        emit ThresholdUpdated(oldThreshold, newThreshold); 
+        emit ThresholdUpdated(oldThreshold, newThreshold);
         revenuePool.setNewthreshold(newThreshold);
     }
 

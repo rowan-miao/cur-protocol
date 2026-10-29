@@ -98,7 +98,7 @@ contract MockNFTChecker {
     }
 
     function paused() external pure returns (bool) {
-        return false; 
+        return false;
     }
 }
 
@@ -153,7 +153,7 @@ contract veCURLockTest is Test {
 
         incentiveGauge.setVeLock(address(veLock));
         veLock.setCurStaking(curStaking);
-     
+
         curToken.transfer(alice, 10_000 * 1e18);
 
         sCURToken.addMinter(address(this));
@@ -406,7 +406,7 @@ contract veCURLockTest is Test {
         emit Unlocked(alice, gaugeBalance);
         veLock.unlock();
     }
-   
+
     // ============================================
     // EarlyUnlock Tests
     // ============================================
@@ -480,7 +480,7 @@ contract veCURLockTest is Test {
 
     function test_CalculatePenalty_AlreadyExpired() public {
         incentiveGauge.setUserAmount(alice, 1000 * 1e18);
-        
+
         vm.prank(alice);
         veLock.lock(DURATION_30);
 
@@ -493,20 +493,20 @@ contract veCURLockTest is Test {
     function test_CalculatePenalty_JustLocked() public {
         uint256 amount = 1000 * 1e18;
         incentiveGauge.setUserAmount(alice, amount);
-        
+
         vm.prank(alice);
         veLock.lock(DURATION_30);
 
         uint256 expectedPenalty = (amount * PENALTY_RATE) / 10000;
         uint256 penalty = veLock.calculatePenalty(alice);
-        
+
         assertEq(penalty, expectedPenalty);
     }
 
     function test_CalculatePenalty_HalfWay() public {
         uint256 amount = 1000 * 1e18;
         incentiveGauge.setUserAmount(alice, amount);
-        
+
         vm.prank(alice);
         veLock.lock(DURATION_30);
 
@@ -514,7 +514,7 @@ contract veCURLockTest is Test {
 
         uint256 expectedPenalty = (amount * PENALTY_RATE * (DURATION_30 / 2)) / DURATION_30 / 10000;
         uint256 penalty = veLock.calculatePenalty(alice);
-        
+
         assertEq(penalty, expectedPenalty);
     }
     // ============================================
@@ -530,14 +530,15 @@ contract veCURLockTest is Test {
     function test_EmergencyBreakLock_NotLocked() public {
         vm.prank(curStaking);
         uint256 penalty = veLock.emergencyBreakLock(alice);
-        
+
         assertEq(penalty, 0);
         assertEq(veLock.totalLocked(), 0);
     }
+
     function test_EmergencyBreakLock_Success() public {
         uint256 amount = 1000 * 1e18;
         incentiveGauge.setUserAmount(alice, amount);
-        
+
         vm.prank(alice);
         veLock.lock(DURATION_30);
 
@@ -549,7 +550,7 @@ contract veCURLockTest is Test {
         uint256 penalty = veLock.emergencyBreakLock(alice);
 
         assertEq(penalty, expectedPenalty);
-  
+
         (,,,,, bool isLocked) = veLock.locks(alice);
         assertFalse(isLocked);
         assertEq(veLock.totalLocked(), 0);
@@ -558,7 +559,7 @@ contract veCURLockTest is Test {
     function test_EmergencyBreakLock_Event() public {
         uint256 amount = 1000 * 1e18;
         incentiveGauge.setUserAmount(alice, amount);
-        
+
         vm.prank(alice);
         veLock.lock(DURATION_30);
 
@@ -673,7 +674,7 @@ contract veCURLockTest is Test {
 
     function test_SetIncentiveGauge_RevertSameAddress() public {
         address currentGauge = address(veLock.incentiveGauge());
-        
+
         vm.prank(owner);
         vm.expectRevert(veCURLock.SameAddress.selector);
         veLock.setIncentiveGauge(currentGauge);
@@ -695,7 +696,7 @@ contract veCURLockTest is Test {
         veLock.setIncentiveGauge(newIncentiveGauge);
     }
 
-      // ============================================
+    // ============================================
     // setCurStaking Tests
     // ============================================
 
@@ -732,7 +733,7 @@ contract veCURLockTest is Test {
 
     function test_SetCurStaking_RevertNotOwner() public {
         vm.prank(alice);
-        vm.expectRevert(); 
+        vm.expectRevert();
         veLock.setCurStaking(makeAddr("newStaking"));
     }
 
@@ -814,7 +815,6 @@ contract veCURLockTest is Test {
 
         vm.prank(alice);
         veLock.earlyUnlock();
-
     }
 
     // ============================================

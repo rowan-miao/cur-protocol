@@ -218,8 +218,7 @@ contract NFTCheckerTest is Test {
         vm.prank(alice);
         nftChecker.bindNFT(address(highNFT), 101);
 
-        (address nftContract, uint256 tokenId, uint256 bindTime, bool isBound) =
-            nftChecker.userBindings(alice);
+        (address nftContract, uint256 tokenId, uint256 bindTime, bool isBound) = nftChecker.userBindings(alice);
 
         assertEq(nftContract, address(highNFT));
         assertEq(tokenId, 101);
@@ -351,7 +350,7 @@ contract NFTCheckerTest is Test {
 
     function test_SetVeLock_Success() public {
         address newVeLock = makeAddr("newVeLock");
-        address oldVeLock = address(nftChecker.veLock()); 
+        address oldVeLock = address(nftChecker.veLock());
         vm.prank(owner);
         vm.expectEmit(true, true, false, true);
         emit VeLockUpdated(oldVeLock, newVeLock);
@@ -373,18 +372,18 @@ contract NFTCheckerTest is Test {
     }
 
     function test_SetVeLock_RevertSameAddress() public {
-        address currentVeLock = address(nftChecker.veLock()); 
-        
+        address currentVeLock = address(nftChecker.veLock());
+
         vm.prank(owner);
         vm.expectRevert(NFTChecker.SameAddress.selector);
-        nftChecker.setVeLock(currentVeLock); 
+        nftChecker.setVeLock(currentVeLock);
     }
 
     function test_SetVeLock_RevertNotOwner() public {
         address newVeLock = makeAddr("newVeLock");
 
         vm.prank(alice);
-        vm.expectRevert(); 
+        vm.expectRevert();
         nftChecker.setVeLock(newVeLock);
     }
 

@@ -102,7 +102,7 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
     error ZeroCURRedeemed();
 
     /// @notice Thrown when an invalid address is provided
-    error InvalidAddress(); 
+    error InvalidAddress();
 
     /// @notice Thrown when the new address is identical to the current one
     error SameAddress();
@@ -131,7 +131,7 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
         if (msg.sender != address(gauge)) revert Unauthorized();
         _;
     }
-    
+
     /**
      * @notice Ensures the veLock contract address is configured before execution
      * @dev Reverts with VeLockNotConfigured if veLock has not been set (address(0))
@@ -194,10 +194,10 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
         if (CURAmount < minimumStake) revert BelowMinimumStake(minimumStake);
 
         curToken.safeTransferFrom(msg.sender, address(this), CURAmount);
-    
+
         uint256 sCURAmount = sCURToken.mint(msg.sender, CURAmount);
         if (sCURAmount == 0) revert ZeroSCURMinted();
- 
+
         emit Staked(msg.sender, CURAmount, sCURAmount);
     }
 
@@ -217,12 +217,12 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
 
         uint256 userBalance = sCURToken.balanceOf(msg.sender);
         if (userBalance < sCURAmount) revert InsufficientFreeSCUR();
-       
+
         uint256 CURAmount = sCURToken.redeem(msg.sender, sCURAmount);
         if (CURAmount == 0) revert ZeroCURRedeemed();
 
         curToken.safeTransfer(msg.sender, CURAmount);
-    
+
         emit UnStaked(msg.sender, sCURAmount, CURAmount);
     }
 
@@ -298,42 +298,42 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
         }
 
         if (!emergencyMode) revert SystemNotPaused();
-          
+
         uint256 penalty = 0;
         if (address(sCURToken) == address(0)) {
             revert DependencyNotConfigured();
         }
 
-        if(address(veLock) != address(0)){
+        if (address(veLock) != address(0)) {
             penalty = veLock.emergencyBreakLock(msg.sender);
         }
-        
-        if(address(gauge) != address(0)){
+
+        if (address(gauge) != address(0)) {
             uint256 gaugeAmount = gauge.getUserAmount(msg.sender);
             if (gaugeAmount > 0) {
                 gauge.gaugeEmergencyWithdraw(msg.sender);
             }
         }
-        
+
         uint256 totalSCUR = sCURToken.balanceOf(msg.sender);
         if (totalSCUR == 0) revert NoAssets();
-        
+
         uint256 actualSCURToRedeem = totalSCUR;
-        if(penalty > 0){
-            if(penalty > totalSCUR) penalty = totalSCUR;
+        if (penalty > 0) {
+            if (penalty > totalSCUR) penalty = totalSCUR;
             actualSCURToRedeem = totalSCUR - penalty;
             uint256 penaltyCUR = sCURToken.emergencyRedeem(msg.sender, penalty);
-            if(penaltyCUR > 0){
+            if (penaltyCUR > 0) {
                 curToken.safeTransfer(address(revenueRebatePool), penaltyCUR);
             }
         }
-  
-        if(actualSCURToRedeem > 0){
+
+        if (actualSCURToRedeem > 0) {
             uint256 CURAmount = sCURToken.emergencyRedeem(msg.sender, actualSCURToRedeem);
-            if(CURAmount == 0) revert NoAssets();
+            if (CURAmount == 0) revert NoAssets();
             curToken.safeTransfer(msg.sender, CURAmount);
         }
-       
+
         emit EmergencyWithdrawn(msg.sender, totalSCUR, actualSCURToRedeem);
     }
 
@@ -392,8 +392,8 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
      */
     function setGauge(address _gauge) external onlyOwner {
         if (_gauge == address(0)) revert ZeroAddress();
-        if(_gauge == address(this)) revert InvalidAddress();
-        if(_gauge == address(gauge)) revert SameAddress();
+        if (_gauge == address(this)) revert InvalidAddress();
+        if (_gauge == address(gauge)) revert SameAddress();
 
         address oldGauge = address(gauge);
         gauge = IIncentiveGauge(_gauge);
@@ -411,7 +411,6 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
         if (_veLock == address(this)) revert InvalidAddress();
         if (_veLock == address(veLock)) revert SameAddress();
 
-
         address oldVeLock = address(veLock);
         veLock = IveCURLock(_veLock);
 
@@ -425,8 +424,8 @@ contract CURStaking is Pausable, Ownable, ReentrancyGuard {
      */
     function setRevenueRebatePool(address _revenueRebatePool) external onlyOwner {
         if (_revenueRebatePool == address(0)) revert ZeroAddress();
-        if(_revenueRebatePool == address(this)) revert InvalidAddress();
-        if(_revenueRebatePool == address(revenueRebatePool)) revert SameAddress();
+        if (_revenueRebatePool == address(this)) revert InvalidAddress();
+        if (_revenueRebatePool == address(revenueRebatePool)) revert SameAddress();
 
         address oldPool = address(revenueRebatePool);
         revenueRebatePool = IRevenueRebatePool(_revenueRebatePool);

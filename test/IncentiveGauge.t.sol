@@ -86,7 +86,6 @@ contract IncentiveGaugeTest is Test {
     event VeLockUpdated(address indexed oldAddress, address indexed newAddress);
     event RevenuePoolUpdated(address indexed oldAddress, address indexed newAddress);
 
-
     // ============================================
     // Setup
     // ============================================
@@ -153,7 +152,6 @@ contract IncentiveGaugeTest is Test {
         vm.expectRevert(IncentiveGauge.ZeroAddress.selector);
         new IncentiveGauge(address(curToken), address(0), address(mockCurStake), address(veLock), address(revenuePool));
     }
-
 
     // ============================================
     // Deposit Tests
@@ -476,8 +474,6 @@ contract IncentiveGaugeTest is Test {
         gauge.gaugeEmergencyWithdraw(alice);
     }
 
-
-
     // ============================================
     // GetReward Tests
     // ============================================
@@ -667,7 +663,7 @@ contract IncentiveGaugeTest is Test {
 
     function test_SetCurStake_RevertSameAddress() public {
         address currentStake = address(gauge.curStake());
-        
+
         vm.prank(owner);
         vm.expectRevert(IncentiveGauge.SameAddress.selector);
         gauge.setCurStake(currentStake);
@@ -675,7 +671,7 @@ contract IncentiveGaugeTest is Test {
 
     function test_SetCurStake_RevertNotOwner() public {
         vm.prank(alice);
-        vm.expectRevert(); 
+        vm.expectRevert();
         gauge.setCurStake(makeAddr("newStake"));
     }
 
@@ -705,7 +701,7 @@ contract IncentiveGaugeTest is Test {
 
     function test_SetVeLock_RevertSameAddress() public {
         address currentVeLock = address(gauge.veLock());
-        
+
         vm.prank(owner);
         vm.expectRevert(IncentiveGauge.SameAddress.selector);
         gauge.setVeLock(currentVeLock);
@@ -743,7 +739,7 @@ contract IncentiveGaugeTest is Test {
 
     function test_SetRevenueRebatePool_RevertSameAddress() public {
         address currentPool = address(gauge.revenueRebatePool());
-        
+
         vm.prank(owner);
         vm.expectRevert(IncentiveGauge.SameAddress.selector);
         gauge.setRevenueRebatePool(currentPool);

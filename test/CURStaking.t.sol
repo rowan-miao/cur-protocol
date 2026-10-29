@@ -85,7 +85,7 @@ contract MockVeCURLock {
     }
 
     function emergencyBreakLock(address user) external view returns (uint256) {
-        return 0; 
+        return 0;
     }
 
     function paused() external pure returns (bool) {
@@ -247,14 +247,14 @@ contract CURStakingTest is Test {
     function test_Stake_AfterExchangeRateGrowth() public {
         vm.prank(alice);
         staking.stake(1000 * 1e18);
-    
+
         sCURToken.updateExchangeRate(500 * 1e18);
 
         assertEq(sCURToken.getExchangeRate(), 1.5e18);
- 
+
         vm.prank(bob);
         staking.stake(1500 * 1e18);
-    
+
         assertEq(sCURToken.balanceOf(bob), 1000 * 1e18);
     }
 
@@ -684,7 +684,7 @@ contract CURStakingTest is Test {
     function test_SetGauge_RevertsWhenSelfAddress() public {
         vm.prank(owner);
         vm.expectRevert(CURStaking.InvalidAddress.selector);
-        staking.setGauge(address(staking)); 
+        staking.setGauge(address(staking));
     }
 
     function test_SetGauge_RevertsWhenSameAddress() public {
@@ -721,7 +721,7 @@ contract CURStakingTest is Test {
     function test_SetVeLock_RevertsWhenSelfAddress() public {
         vm.prank(owner);
         vm.expectRevert(CURStaking.InvalidAddress.selector);
-        staking.setVeLock(address(staking)); 
+        staking.setVeLock(address(staking));
     }
 
     function test_SetVeLock_RevertsWhenSameAddress() public {

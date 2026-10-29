@@ -29,7 +29,7 @@ contract RevenueRebatePool is Pausable, Ownable, ReentrancyGuard {
     ICURStaking public immutable curStaking;
     IIncentiveGauge public gauge;
 
-    uint256 public constant MIN_THRESHOLD = 100 * 1e18;       // 100 CUR
+    uint256 public constant MIN_THRESHOLD = 100 * 1e18; // 100 CUR
     uint256 public constant MAX_THRESHOLD = 1_000_000 * 1e18;
 
     uint256 public totalRevenue;
@@ -73,11 +73,10 @@ contract RevenueRebatePool is Pausable, Ownable, ReentrancyGuard {
     error NoSCURSupply();
     /// @notice Thrown when a parameter value is outside the allowed threshold range
     error InvalidThreshold();
-    /// @notice Thrown when an address parameter is invalid 
+    /// @notice Thrown when an address parameter is invalid
     error InvalidAddress();
-    /// @notice Thrown when the new address is identical to the existing one 
+    /// @notice Thrown when the new address is identical to the existing one
     error SameAddress();
-
 
     // ============================================
     // Modifiers
@@ -208,7 +207,7 @@ contract RevenueRebatePool is Pausable, Ownable, ReentrancyGuard {
      * @param newthreshold New threshold value (in CUR with 18 decimals)
      */
     function setNewthreshold(uint256 newthreshold) public onlyOwner {
-        if(newthreshold < MIN_THRESHOLD || newthreshold > MAX_THRESHOLD){
+        if (newthreshold < MIN_THRESHOLD || newthreshold > MAX_THRESHOLD) {
             revert InvalidThreshold();
         }
         uint256 oldThreshold = threshold;
@@ -223,8 +222,8 @@ contract RevenueRebatePool is Pausable, Ownable, ReentrancyGuard {
      */
     function setGauge(address _gauge) external onlyOwner {
         if (_gauge == address(0)) revert ZeroAddress();
-        if(_gauge == address(this)) revert InvalidAddress();
-        if(_gauge == address(gauge)) revert SameAddress();
+        if (_gauge == address(this)) revert InvalidAddress();
+        if (_gauge == address(gauge)) revert SameAddress();
 
         address oldGauge = address(gauge);
         gauge = IIncentiveGauge(_gauge);
