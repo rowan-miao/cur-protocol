@@ -93,12 +93,12 @@ CUR Staking Protocol 是一个基于加权 Compound Index 模型的去中心化�
 
 | 模块 | 功能 | 优先级 | 计划迭代 | 依赖 |
 |------|------|--------|---------|------|
-| 基础质押 | stake / unstake | P0 | 第1期 | CURToken, sCUR，CURStaking |
-| 质押凭证 | sCUR 1:1 铸造 / 销毁及本金锚定 | P0 | 第1期 | CURToken, CURStaking, sCUR |
-| 通胀奖励 | IncentiveGauge | P0 | 第1期 | CURToken，sCUR, CURStaking |
-| 锁仓加成 | veCURLock | P1 | 第1期 | CURStaking，sCUR，IncentiveGauge |
+| 基础质押 | stake / unstake | P0 | 第1期 | CURToken, sCUR, CURStaking |
+| 质押凭证 | sCUR 初始 1:1 铸造 / 销毁及生息汇率升值 | P0 | 第1期 | CURToken, CURStaking, sCUR |
+| 通胀奖励 | IncentiveGauge | P0 | 第1期 | CURToken, sCUR, CURStaking, veCURLock, RevenueRebatePool |
+| 锁仓加成 | veCURLock | P1 | 第1期 | CURStaking, sCUR, IncentiveGauge, NFTChecker |
 | NFT 权限 | NFTChecker | P2 | 第2期 | veCURLock |
-| 收入反哺 | RevenueRebatePool | P1 | 第1期 | CURToken，sCUR，CURStaking |
+| 收入反哺 | RevenueRebatePool | P1 | 第1期 | CURToken, sCUR, CURStaking, IncentiveGauge |
 
 ---
 ## 5. 功能详述（产品视角）
@@ -522,6 +522,12 @@ Scenario: 汇率变化后赎回
   When 用户 alice 调用 unstake(1000)
   Then 用户 alice 收到 1500 CUR
   And  触发 UnStaked(alice, 1000, 1500) 事件
+Scenario: 合约暂停时依然可以赎回（防资金死锁）
+  Given 用户 alice 已质押 1000 CUR
+  And  CURStaking 合约已暂停
+  When 用户 alice 调用 unstake(1000)
+  Then 交易成功，不回滚
+  And  用户 alice 收到 1000 CUR
 ```
 
 ### 6.3 进入矿池（enterGauge）
@@ -598,6 +604,13 @@ Scenario: 用户部分退出矿池
   When 用户 alice 调用 exitGauge(250)
   Then 用户 alice 的 depositedGauge = 350
   And  用户 alice 的 sCUR 余额增加 250
+
+Scenario: 合约暂停时依然可以退出矿池（防资金死锁）
+  Given 用户 alice 已存入矿池 600 sCUR
+  And  CURStaking 或 Gauge 合约已暂停
+  When 用户 alice 调用 exitGauge(600)
+  Then 交易成功，不回滚
+  And  用户 alice 的 sCUR 余额增加 600
 ```
 
 ### 6.5 锁仓功能（Lock）
@@ -657,6 +670,13 @@ Scenario: 用户在矿池中没有 sCUR
   Given 用户 alice 在矿池中有 0 sCUR
   When 用户 alice 调用 lock(30 days)
   Then 交易回滚，错误 ZeroSCUR
+
+Scenario: NFT 被移除白名单后，无法继续锁长仓
+  Given 用户 alice 绑定了中级 NFT，原本可锁 365 天
+  And  管理员将该 NFT 移除了白名单
+  When 用户 alice 尝试调用 lock(365 days)
+  Then 交易回滚，错误 DurationExceedsPermission
+  And  用户 alice 的权限降级为最多只能锁 180 天
 ```
 
 ### 6.6 正常解锁（unlock）
@@ -672,6 +692,7 @@ Scenario: 用户成功正常解锁
   And  incentiveGauge.executeUnlock(alice) 被调用
   And  gauge 中 alice 的权重重置为 userInfo.amount × 1.0e18 / PRECISION
   And  触发 UnlockExecuted(alice) 事件
+  And  如果用户绑定了 NFT，则解除绑定，触发 NFTUnbound 事件
 
 Scenario: 用户尝试在锁仓到期前正常解锁
   Given 用户 alice 已锁仓 1000 sCUR 30 天
@@ -687,23 +708,31 @@ Scenario: 用户未锁仓时调用解锁
 ### 6.7 提前解锁（earlyUnlock）
 
 ```gherkin
-Scenario: 用户成功提前解锁（产生惩罚）
+Scenario: 用户成功提前解锁（产生惩罚，无需绑定 NFT）
   Given 用户 alice 已锁仓 1000 sCUR 30 天
   And  锁仓已过 15 天（剩余 15 天）
-  And  用户 alice 已绑定 NFT
+  And  用户 alice 没有绑定 NFT
   When 用户 alice 调用 earlyUnlock()
   Then 用户 alice 的锁仓状态变为未锁仓
   And  veCURLock 的 totalLocked 减少 1000
-  And  惩罚金额 = 1000 × 50% × (15/30) = 250 sCUR
+  And  计算惩罚金额为 1000 × 50% × (15/30) = 250 sCUR
   And  触发 EarlyUnlocked(alice, 1000, 250) 事件
   And  incentiveGauge.executeEarlyUnlock(alice, 250) 被调用
   And  gauge 中 alice 的 depositedGauge 减少 250
   And  gauge 中 alice 的 pendingRewards 被清零并转入 RevenueRebatePool
-  And  gauge 调用 sCUR.burnGaugePenalty(250)，烧掉 gauge 的 250 sCUR
-  And  CURStaking 将等值 CUR 转入 RevenueRebatePool
+  And  gauge 调用 sCUR.burnGaugePenalty(250)，烧掉 gauge 的 250 sCUR，并算出等值 CUR
+  And  gauge 调用 CURStaking.executePenalty，将等值 CUR 转入 RevenueRebatePool
   And  gauge 中 alice 的权重重置为 (1000 - 250) × 1.0e18 / PRECISION
-  And  用户的 NFT 绑定被解除
-  And  触发 NFTUnbound(alice, ...) 事件
+  And  触发 EarlyUnlockExecuted 事件
+
+Scenario: 用户绑定了 NFT 并提前解锁（额外解绑 NFT）
+  Given 用户 alice 已锁仓 1000 sCUR 365 天，且绑定了中级 NFT
+  And  锁仓已过 182.5 天
+  When 用户 alice 调用 earlyUnlock()
+  Then 用户 alice 的锁仓状态变为未锁仓
+  And  计算惩罚金额为 1000 × 50% × (182.5/365) = 250 sCUR
+  And  解除 NFT 绑定，触发 NFTUnbound 事件
+  And  其余罚没与结算逻辑同上
 
 Scenario: 用户提前解锁时锁仓已到期
   Given 用户 alice 已锁仓 1000 sCUR 30 天
@@ -716,18 +745,15 @@ Scenario: 用户未锁仓时调用提前解锁
   When 用户 alice 调用 earlyUnlock()
   Then 交易回滚，错误 NotLocked
 
-Scenario: 惩罚金额计算正确（过半）
-  Given 用户 alice 锁仓 1000 sCUR 30 天
-  And  锁仓剩余 15 天
-  When 用户 alice 调用 earlyUnlock()
-  Then 惩罚金额 = 1000 × 50% × (15/30) = 250 sCUR
-
-Scenario: 惩罚金额接近 0（到期前 1 秒）
-  Given 用户 alice 锁仓 1000 sCUR 30 天
-  And  锁仓剩余 1 秒
-  When 用户 alice 调用 earlyUnlock()
-  Then 惩罚金额 ≈ 0
-  And  不调用 burnGaugePenalty（penalty == 0）
+Scenario: 直接查询罚金计算（无回滚）
+  Given 用户 alice 已锁仓 1000 sCUR 30 天，剩余 15 天
+  When 外部直接调用 calculatePenalty(alice)
+  Then 返回 250 sCUR（无报错）
+  
+Scenario: 查询未锁仓用户的罚金（无回滚）
+  Given 用户 alice 没有锁仓
+  When 外部直接调用 calculatePenalty(alice)
+  Then 返回 0（无报错）
 ```
 
 
@@ -762,11 +788,20 @@ Scenario: 多个用户分别领取奖励
   And  用户 bob 调用 getReward()
   Then 用户 alice 收到 100 CUR
   And  用户 bob 收到 200 CUR
+
+Scenario: 锁仓到期后拖延领取奖励，权重自动降级
+  Given 用户 alice 锁仓 30 天（权重为 1.15x），且未主动调用 unlock()
+  And  时间已经过去 31 天（锁仓已自然到期）
+  When 用户 alice 直接调用 getReward()
+  Then 奖励正常发放到 alice 钱包
+  And  gauge 内部触发 _updateWeight，alice 的权重自动降级为 1.0x
+  And  该用户后续不再享受高权重分红
 ```
 
 ### 6.9 存入矿池(deposit)
 
 ```gherkin
+
 Scenario: CURStaking 成功调用 deposit
   Given 用户 alice 已质押 1000 CUR
   And  用户 alice 已通过 enterGauge 将 600 sCUR 转入 gauge
@@ -871,10 +906,11 @@ Scenario: withdraw 时刷新闲置奖励
   Then accumulatedIdleRewards 被转入 revenueRebatePool
   And  触发 IdleRewardsFlushed 事件
 
-Scenario: 合约暂停时 withdraw
+Scenario: 合约暂停时 withdraw 依然成功（审计修复点）
   Given gauge 已暂停
   When CURStaking 调用 gauge.withdraw(alice, 1000)
-  Then 交易回滚（whenNotPaused 拦截）
+  Then 交易成功，不会回滚
+  And  1000 sCUR 成功转回用户
 ```
 
 ### 6.11 领取空投（Claim）
@@ -1186,7 +1222,7 @@ $$
 对应代码：
 ```solidity
 userInfo.pendingRewards = 0;
-curToken.transfer(msg.sender, reward);
+curToken.safeTransfer(msg.sender, reward);
 ```
 
 
@@ -1257,7 +1293,7 @@ $$
 对应代码：
 
 ```solidity
-curToken.transfer(address(revenueRebatePool), pendingReward);
+curToken.safeTransfer(address(revenueRebatePool), pendingReward);
 ```
 
 # 8. 非功能需求
